@@ -44,3 +44,30 @@ def test_regex_wins_on_overlap():
         def detect(self, text): return [(0, len(text), "PER")]
     out = pseudonymize_text("RSSMRA80A01F205X", ner=_Greedy())
     assert out.startswith("CF_")
+
+def test_unmapped_label_logged(caplog):
+    """Carry-over from Task 1: unmapped entity_group labels must be logged, not silently dropped."""
+    from miarag.pseudonymize import RizzoNerDetector
+    import logging
+
+    # Mock pipeline that returns an unknown label
+    class _FakePipeline:
+        def __call__(self, text):
+            return [{"entity_group": "UNKNOWN_ORG", "start": 0, "end": 4, "score": 0.99}]
+
+    detector = RizzoNerDetector()
+    detector._pipe = _FakePipeline()  # bypass lazy-load
+
+    with caplog.at_level(logging.WARNING, logger="miarag.pseudonymize"):
+        spans = detector.detect("test")
+
+    # The span is dropped (not in _LABEL_MAP)
+    assert spans == []
+    # But a warning is logged
+    assert "Unmapped entity_group from NER model: 'UNKNOWN_ORG'" in caplog.text
+
+    # Second call with same label should not log again (dedupe via _warned_labels)
+    caplog.clear()
+    spans2 = detector.detect("test")
+    assert spans2 == []
+    assert "UNKNOWN_ORG" not in caplog.text  # no duplicate warning

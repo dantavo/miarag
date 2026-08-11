@@ -1,7 +1,10 @@
 # src/miarag/pseudonymize.py
 import hashlib
+import logging
 import re
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 PII_PATTERNS = {
     "CF": re.compile(r"\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b"),
@@ -48,6 +51,7 @@ class RizzoNerDetector:
     def __init__(self, model_id: str = "rizzoaiacademy/rizzo-pii-0.3B"):
         self._model_id = model_id
         self._pipe = None
+        self._warned_labels = set()  # track unmapped labels already warned
 
     def _ensure(self):
         if self._pipe is None:
@@ -63,4 +67,8 @@ class RizzoNerDetector:
             kind = self._LABEL_MAP.get(grp)
             if kind:
                 spans.append((int(ent["start"]), int(ent["end"]), kind))
+            elif grp and grp not in self._warned_labels:
+                # Defensive: log unmapped labels once to surface silent drops
+                logger.warning(f"Unmapped entity_group from NER model: '{grp}' (span skipped)")
+                self._warned_labels.add(grp)
         return spans
