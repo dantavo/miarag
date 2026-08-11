@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets — MAI committare
+.env
+
+# Artefatti PoC
+chroma_db/
+*.sqlite3
+data/synthetic/*.jsonl
+results/*.csv
+results/*.png
+.DS_Store
+
+# Corpus reale Corpus — PII vera, MAI su GitHub
+documenti_legacy/
+
+# SDD scratch
+.superpowers/
