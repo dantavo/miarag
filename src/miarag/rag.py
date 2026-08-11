@@ -38,7 +38,7 @@ class TargetRAG:
         self._coll = self._client.create_collection(f"test_{uuid.uuid4().hex[:8]}")
 
     def _ollama_generate(self, prompt: str, max_tokens: int) -> str:
-        return self._llm.invoke(prompt, num_predict=max_tokens)
+        return self._llm.invoke(prompt, options={"num_predict": max_tokens})
 
     def index(self, chunks: list[Chunk]) -> None:
         embs = self._embed_docs([c.text for c in chunks])

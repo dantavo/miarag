@@ -1,5 +1,6 @@
 # tests/test_rag.py
 import pytest
+from unittest.mock import MagicMock
 from miarag.corpus import Chunk
 from miarag.rag import TargetRAG, RAGResponse
 
@@ -38,3 +39,12 @@ def test_perplexity_fallback_deterministic():
     rag._perplexity_hf = lambda text: 42.0
     ppl = rag.perplexity_of("test text")
     assert ppl == 42.0
+
+def test_ollama_generate_puts_num_predict_in_options():
+    """Verify max_tokens reaches Ollama correctly via options dict (BudgetLeak critical)."""
+    rag = TargetRAG.__new__(TargetRAG)
+    rag._llm = MagicMock()
+    rag._llm.invoke.return_value = "ok"
+    out = rag._ollama_generate("prompt", max_tokens=7)
+    assert out == "ok"
+    assert rag._llm.invoke.call_args.kwargs.get("options") == {"num_predict": 7}
