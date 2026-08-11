@@ -16,6 +16,7 @@ wheels/
 chroma_db/
 *.sqlite3
 data/synthetic/*.jsonl
+data/processed/
 results/*.csv
 results/*.png
 .DS_Store
