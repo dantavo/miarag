@@ -20,7 +20,8 @@ results/*.csv
 results/*.png
 .DS_Store
 
-# Corpus reale Corpus — PII vera, MAI su GitHub
+# Corpus reale — PII vera, MAI su GitHub (report business-information sorgente)
+documenti/
 documenti_legacy/
 
 # SDD scratch

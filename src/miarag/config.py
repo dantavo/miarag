@@ -17,7 +17,7 @@ class Settings:
     seed: int = 42
     data_dir: Path = _ROOT / "data"
     results_dir: Path = _ROOT / "results"
-    corpus_dir: Path = _ROOT / "documenti_legacy"
+    corpus_dir: Path = _ROOT / "documenti"
 
 def get_settings() -> Settings:
     return Settings()
