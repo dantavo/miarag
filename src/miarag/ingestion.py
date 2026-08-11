@@ -18,7 +18,12 @@ def load_pdf(path: Path) -> str:
     return "\n".join(p.extract_text() or "" for p in reader.pages)
 
 def parse_report_text(raw: str, doc_id: str, ner: NerDetector | None = None) -> ReportDoc:
-    has_person = bool(PII_PATTERNS["CF"].search(raw))
+    # Derive has_person from NER FULLNAME detections on raw text
+    has_person = False
+    if ner is not None:
+        fullname_spans = [s for s in ner.detect(raw) if s[2] == "PERSON"]
+        has_person = len(fullname_spans) > 0
+
     company = next((ln.strip() for ln in raw.splitlines() if ln.strip()), doc_id)  # dal raw
     clean = re.sub(r"[ \t]+", " ", raw)
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()

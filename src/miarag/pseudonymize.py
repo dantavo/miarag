@@ -44,9 +44,22 @@ def pseudonymize_text(text: str, seed: int = 42, ner: NerDetector | None = None)
     return text
 
 class RizzoNerDetector:
-    """NER italiano rizzo-pii-0.3B via transformers. Lazy-load; solo PER/LOC."""
-    _LABEL_MAP = {"PER": "PER", "PERSON": "PER", "FULLNAME": "PER",
-                  "LOC": "LOC", "ADDRESS": "LOC", "GPE": "LOC"}
+    """NER italiano rizzo-pii-0.3B via transformers. Lazy-load; maps real rizzo-pii labels."""
+    _LABEL_MAP = {
+        "FULLNAME": "PERSON",
+        "CF": "CF",
+        "PIVA": "PIVA",
+        "IBAN": "IBAN",
+        "EMAIL": "EMAIL",
+        "TELEPHONENUM": "PHONE",
+        "STREET": "STREET",
+        "BUILDINGNUM": "BUILDINGNUM",
+        "ZIPCODE": "ZIP",
+        "ID_DOC": "DOCID",
+        "DOCID": "DOCID",
+        "TARGA": "PLATE",
+    }
+    _EXPECTED_UNMAPPED = {"ORG", "CITY", "PROVINCE", "DATE", "AMOUNT", "AGE"}
 
     def __init__(self, model_id: str = "rizzoaiacademy/rizzo-pii-0.3B"):
         self._model_id = model_id
@@ -67,8 +80,9 @@ class RizzoNerDetector:
             kind = self._LABEL_MAP.get(grp)
             if kind:
                 spans.append((int(ent["start"]), int(ent["end"]), kind))
-            elif grp and grp not in self._warned_labels:
+            elif grp and grp not in self._EXPECTED_UNMAPPED and grp not in self._warned_labels:
                 # Defensive: log unmapped labels once to surface silent drops
+                # (expected keep-labels like ORG/CITY/DATE are not logged)
                 logger.warning(f"Unmapped entity_group from NER model: '{grp}' (span skipped)")
                 self._warned_labels.add(grp)
         return spans
