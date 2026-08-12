@@ -84,7 +84,22 @@ def pseudonymize_text(text: str, seed: int = 42, ner: NerDetector | None = None)
         if s < prev:            # overlap residuo: salta (già coperto)
             continue
         out.append(text[prev:s])
-        out.append(token_for(kind, text[s:e], seed))
+
+        # Preserva whitespace leading/trailing: se span inizia/finisce con spazio,
+        # includi spazio prima/dopo token (NER rizzo spesso cattura whitespace)
+        span_text = text[s:e]
+        leading_ws = ""
+        trailing_ws = ""
+        if span_text and span_text[0].isspace():
+            leading_ws = span_text[0]
+            span_text = span_text[1:]
+            s += 1
+        if span_text and span_text[-1].isspace():
+            trailing_ws = span_text[-1]
+            span_text = span_text[:-1]
+            e -= 1
+
+        out.append(leading_ws + token_for(kind, span_text, seed) + trailing_ws)
         prev = e
     out.append(text[prev:])
     result = "".join(out)
