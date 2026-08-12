@@ -93,34 +93,31 @@ if section == "Attacchi Live":
             test_non_members = non_members[:max_chunks]
 
             results = []
-            with st.spinner(f"Esecuzione {attack_type} su {len(test_members + test_non_members)} chunk..."):
-                for chunk in test_members:
-                    try:
-                        if attack_type == "S2MIA":
-                            res = live_s2mia_on_chunk(rag, chunk.text)
-                        else:
-                            res = live_budgetleak_on_chunk(rag, chunk.text)
-                        results.append({
-                            "chunk_id": chunk.chunk_id,
-                            "is_member": True,
-                            "score": res["score"]
-                        })
-                    except Exception as e:
-                        st.error(f"Errore su chunk {chunk.chunk_id}: {e}")
+            all_chunks = [(c, True) for c in test_members] + [(c, False) for c in test_non_members]
+            total = len(all_chunks)
 
-                for chunk in test_non_members:
-                    try:
-                        if attack_type == "S2MIA":
-                            res = live_s2mia_on_chunk(rag, chunk.text)
-                        else:
-                            res = live_budgetleak_on_chunk(rag, chunk.text)
-                        results.append({
-                            "chunk_id": chunk.chunk_id,
-                            "is_member": False,
-                            "score": res["score"]
-                        })
-                    except Exception as e:
-                        st.error(f"Errore su chunk {chunk.chunk_id}: {e}")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            for i, (chunk, is_member) in enumerate(all_chunks):
+                status_text.text(f"Attacco {attack_type}: chunk {i+1}/{total} ({'membro' if is_member else 'non-membro'})...")
+                try:
+                    if attack_type == "S2MIA":
+                        res = live_s2mia_on_chunk(rag, chunk.text)
+                    else:
+                        res = live_budgetleak_on_chunk(rag, chunk.text)
+                    results.append({
+                        "chunk_id": chunk.chunk_id,
+                        "is_member": is_member,
+                        "score": res["score"]
+                    })
+                except Exception as e:
+                    st.error(f"Errore su chunk {chunk.chunk_id}: {e}")
+
+                progress_bar.progress((i + 1) / total)
+
+            status_text.text(f"✓ Completato: {total} chunk processati")
+            progress_bar.empty()
 
             if results:
                 df = pd.DataFrame(results)
