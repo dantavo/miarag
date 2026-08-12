@@ -21,6 +21,17 @@ def roc_auc(scores, labels) -> float:
     """
     return float(roc_auc_score(labels, scores))
 
+def tpr_fpr_at_fpr(scores, labels, target_fpr: float = 0.01) -> tuple[float, float]:
+    """Return (TPR, achieved FPR) at the operating point that maximizes TPR
+    subject to FPR <= target_fpr. If no point qualifies, return (0.0, 0.0)."""
+    fpr, tpr, _ = roc_curve(labels, scores)
+    ok = fpr <= target_fpr
+    if not ok.any():
+        return 0.0, 0.0
+    idx_candidates = np.where(ok)[0]
+    best = idx_candidates[int(np.argmax(tpr[idx_candidates]))]
+    return float(tpr[best]), float(fpr[best])
+
 def tpr_at_fpr(scores, labels, target_fpr: float = 0.01) -> float:
     """Compute TPR at a given FPR threshold (interpolated).
 
@@ -38,9 +49,7 @@ def tpr_at_fpr(scores, labels, target_fpr: float = 0.01) -> float:
     Returns:
         TPR value at the given FPR threshold
     """
-    fpr, tpr, _ = roc_curve(labels, scores)
-    ok = fpr <= target_fpr
-    return float(tpr[ok].max()) if ok.any() else 0.0
+    return tpr_fpr_at_fpr(scores, labels, target_fpr)[0]
 
 def ppv_with_prior(tpr: float, fpr: float, prior: float) -> float:
     """Compute Positive Predictive Value (precision) incorporating membership prior.
@@ -101,13 +110,13 @@ def evaluate(scores, labels, prior: float = 0.1, target_fpr: float = 0.01) -> At
         AttackReport with AUC, TPR@1%FPR, PPV, and advantage
     """
     auc = roc_auc(scores, labels)
-    tpr = tpr_at_fpr(scores, labels, target_fpr)
+    tpr, achieved_fpr = tpr_fpr_at_fpr(scores, labels, target_fpr)
 
     # Compute advantage at the Youden's J statistic point (max TPR - FPR)
     fpr_curve, tpr_curve, _ = roc_curve(labels, scores)
     j = int(np.argmax(tpr_curve - fpr_curve))
     adv = membership_advantage(float(tpr_curve[j]), float(fpr_curve[j]))
 
-    ppv = ppv_with_prior(tpr, target_fpr, prior)
+    ppv = ppv_with_prior(tpr, achieved_fpr, prior)
 
     return AttackReport(auc=auc, tpr_at_1fpr=tpr, ppv=ppv, advantage=adv)
