@@ -137,7 +137,7 @@ if section == "Attacchi Live":
 
                 if len(scores) >= 2 and any(labels) and not all(labels):
                     metrics = evaluate(scores, labels, prior=0.1)
-                    st.success(f"AUC: {metrics['auc']:.3f} | TPR@1%FPR: {metrics['tpr_at_1fpr']:.3f}")
+                    st.success(f"AUC: {metrics.auc:.3f} | TPR@1%FPR: {metrics.tpr_at_1fpr:.3f}")
                 elif len(scores) < 2:
                     st.warning("Troppi chunk con errore, impossibile calcolare metriche.")
                 else:
