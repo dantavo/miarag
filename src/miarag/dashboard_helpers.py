@@ -7,7 +7,6 @@ from miarag.attacks.budgetleak import budget_sequence, budget_features
 
 def load_summary_rows(path: Path) -> list[dict]:
     """Legge results/summary.csv → lista di dict. [] se il file non esiste."""
-    path = Path(path)
     if not path.exists():
         return []
     with path.open() as f:

@@ -68,6 +68,7 @@ section = st.sidebar.radio(
 if section == "Attacchi Live":
     st.header("Attacchi Live su Ollama")
     st.info("Esegue S2MIA o BudgetLeak su un sottoinsieme di chunk (lento, richiede Ollama attivo).")
+    st.info("Nota: il RAG è indicizzato SOLO con i chunk membri (simulazione dell'attacco); i non-membri sono testati contro questo RAG per misurare se l'attacco riesce a distinguerli.")
 
     max_chunks = st.number_input("Max chunk da testare", min_value=1, max_value=20, value=5, step=1)
     attack_type = st.radio("Tipo attacco", ["S2MIA", "BudgetLeak"])
