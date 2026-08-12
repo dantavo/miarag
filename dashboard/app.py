@@ -126,9 +126,20 @@ if section == "Attacchi Live":
                 # Valuta se abbiamo almeno un membro e un non-membro
                 scores = [r["score"] for r in results]
                 labels = [r["is_member"] for r in results]
-                if any(labels) and not all(labels):
+
+                # Guard NaN/inf (GPT-2 perplexity fail, embedding error)
+                import math
+                valid_idx = [i for i, s in enumerate(scores) if math.isfinite(s)]
+                if len(valid_idx) < len(scores):
+                    st.warning(f"⚠️ {len(scores) - len(valid_idx)} chunk con score NaN/inf ignorati (errore perplexity/embedding)")
+                scores = [scores[i] for i in valid_idx]
+                labels = [labels[i] for i in valid_idx]
+
+                if len(scores) >= 2 and any(labels) and not all(labels):
                     metrics = evaluate(scores, labels, prior=0.1)
                     st.success(f"AUC: {metrics['auc']:.3f} | TPR@1%FPR: {metrics['tpr_at_1fpr']:.3f}")
+                elif len(scores) < 2:
+                    st.warning("Troppi chunk con errore, impossibile calcolare metriche.")
                 else:
                     st.warning("Serve almeno un membro e un non-membro per calcolare AUC.")
 
