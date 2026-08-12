@@ -143,7 +143,7 @@ elif section == "Metriche & Grafici":
     roc_path = settings.results_dir / "roc.png"
     if roc_path.exists():
         st.subheader("ROC Curve")
-        st.image(str(roc_path), use_column_width=True)
+        st.image(str(roc_path), use_container_width=True)
     else:
         st.info("Nessun roc.png trovato.")
 
