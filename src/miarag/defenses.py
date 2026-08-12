@@ -26,6 +26,8 @@ class _Wrapped:
         return resp
     def perplexity_of(self, text):
         return self._inner.perplexity_of(text)
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
 
 def prompt_hardening_wrapper(rag):
     return _Wrapped(rag, transform_q=lambda q: _HARDENING + q)
