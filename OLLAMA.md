@@ -5,7 +5,7 @@ Ollama gira come daemon in background ed espone un'API HTTP su `http://localhost
 (la stessa che LangChain usa via `langchain-ollama`).
 
 I pesi dei modelli **non** stanno nel Vault: vivono in `~/.ollama/models`. Il Vault contiene
-solo il codice PoC (`master/poc/`) e questo manuale.
+solo il codice PoC (`master/miarag/`) e questo manuale.
 
 ---
 

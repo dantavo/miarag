@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_ROOT = Path(__file__).resolve().parents[2]  # master/poc/
+_ROOT = Path(__file__).resolve().parents[2]  # master/miarag/
 
 @dataclass(frozen=True)
 class Settings:
