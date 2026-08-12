@@ -45,7 +45,7 @@ def _get_rag_with_corpus():
     if not docs:
         return None
     chunks = chunk_documents(docs)
-    members, non_members = split_members(chunks, frac=0.5, seed=settings.seed)
+    members, non_members = split_members(chunks, member_frac=0.5, seed=settings.seed)
     if not members:
         return None
     rag = TargetRAG(
