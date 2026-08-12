@@ -23,7 +23,6 @@ results/*.png
 
 # Corpus reale — PII vera, MAI su GitHub (report business-information sorgente)
 documenti/
-documenti_legacy/
 
 # SDD scratch
 .superpowers/
