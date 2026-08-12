@@ -67,8 +67,17 @@ section = st.sidebar.radio(
 # ====== SEZIONE 1: ATTACCHI LIVE ======
 if section == "Attacchi Live":
     st.header("Attacchi Live su Ollama")
-    st.info("Esegue S2MIA o BudgetLeak su un sottoinsieme di chunk (lento, richiede Ollama attivo).")
-    st.info("Nota: il RAG è indicizzato SOLO con i chunk membri (simulazione dell'attacco); i non-membri sono testati contro questo RAG per misurare se l'attacco riesce a distinguerli.")
+    st.markdown("""
+    **Esegue attacchi di Membership Inference in tempo reale** contro il RAG locale (Ollama).
+
+    - **S2MIA**: misura sovrapposizione risposta↔documento (BLEU) + perplexity. Score alto → probabile membro.
+    - **BudgetLeak**: side-channel sul generation budget (32/96/256 token). Sequenze di similarità crescenti → membro.
+
+    **Setup attacco**: il RAG è indicizzato SOLO con i chunk membri (split 50/50 del corpus). I non-membri sono testati *contro* questo RAG indicizzato — se l'attacco funziona, score(membri) > score(non-membri) → AUC > 0.5 (casuale).
+
+    ⚠️ **Lento**: ogni chunk richiede 1-3 generazioni Ollama (~5-10s cadauno). Limita a 5-10 chunk per test rapido.
+    """)
+    st.info("💡 **Per la tesi**: questi attacchi dimostrano che un attaccante black-box (solo query→risposta) può inferire membership del corpus RAG senza accesso ai pesi del modello.")
 
     max_chunks = st.number_input("Max chunk da testare", min_value=1, max_value=20, value=5, step=1)
     attack_type = st.radio("Tipo attacco", ["S2MIA", "BudgetLeak"])
@@ -129,7 +138,21 @@ if section == "Attacchi Live":
 # ====== SEZIONE 2: METRICHE & GRAFICI ======
 elif section == "Metriche & Grafici":
     st.header("Metriche & Grafici")
-    st.info("Visualizza risultati precedenti da results/.")
+    st.markdown("""
+    **Visualizza i risultati del full-run** (già eseguito su tutti i 245 chunk del corpus).
+
+    **Metriche chiave** (prior membership = 0.1):
+    - **AUC**: area sotto curva ROC. >0.5 = meglio di casuale; ≥0.7 = attacco forte.
+    - **TPR@1%FPR**: true positive rate quando FPR ≤ 1% (setting conservativo: attaccante accetta max 1% falsi positivi).
+    - **PPV (Positive Predictive Value)**: probabilità che un "membro predetto" sia davvero membro, corretto per prior π=0.1 (formula Bayesiana: π·TPR / (π·TPR + (1−π)·FPR)).
+    - **Advantage**: TPR − FPR (guadagno netto sopra random guess).
+
+    **Risultati tesi** (defense=none, embedding MiniLM-L6-v2, 5 documenti corpus):
+    - S2MIA: AUC 0.527 — lievemente sopra casuale, corpus piccolo limita segnale.
+    - BudgetLeak: AUC 0.521 — simile, side-channel budget debole su corpus ridotto.
+
+    ℹ️ Con corpus 20-50 doc, AUC attesa 0.6-0.75+ (vedi letteratura Carlini et al. 2021).
+    """)
 
     summary_path = settings.results_dir / "summary.csv"
     rows = load_summary_rows(summary_path)
@@ -150,7 +173,20 @@ elif section == "Metriche & Grafici":
 # ====== SEZIONE 3: GATE PII ======
 elif section == "Gate PII":
     st.header("Demo Gate PII")
-    st.info("Mostra come il testo grezzo viene pseudonimizzato (solo regex per velocità UI; full-run usa anche NER).")
+    st.markdown("""
+    **Pseudonimizzazione etica** del corpus prima dell'indicizzazione RAG.
+
+    **Pipeline full** (ingestion reale):
+    1. **Regex** → CF, P.IVA, IBAN, email, telefono, indirizzi, numeri lunghi (≥9 cifre).
+    2. **NER italiano** (`rizzo-pii-0.3B`) → nomi persona, luoghi, org, date, numeri ID.
+    3. **Backstop fail-closed**: qualunque sequenza ≥9 cifre residua → token `NUM_<hash8>`.
+
+    Ogni entità PII → token deterministico `<TIPO>_<hash8>` (stesso input = stesso token, per preservare co-occorrenze senza esporre PII).
+
+    **Qui (demo UI)**: solo regex (veloce), no NER. Il full-run con NER ha verificato **0 PII residua** su 5 PDF reali (507 token pseudonimizzati, 0 email/IBAN/CF/9+cifre nel testo finale).
+
+    🔒 **Ethical clearance**: nessun dato PII reale entra nel RAG né nel repository GitHub. Artefatti (reports.jsonl, results/) git-ignored.
+    """)
 
     user_text = st.text_area("Inserisci testo con PII", height=150, value="Amministratore CF RSSMRA80A01F205X presente. P.IVA 01234567890.")
 
@@ -165,7 +201,19 @@ elif section == "Gate PII":
 # ====== SEZIONE 4: ESPLORA RAG ======
 elif section == "Esplora RAG":
     st.header("Esplora RAG Black-Box")
-    st.info("Query il RAG e vedi risposta + chunk recuperati.")
+    st.markdown("""
+    **Interroga il sistema RAG** come farebbe un attaccante o un utente normale.
+
+    **Architettura RAG** (locale):
+    - **Vector DB**: Chroma (in-memory, ephemeral).
+    - **Embedding**: `sentence-transformers/all-MiniLM-L6-v2` (384d, generico non-IT).
+    - **Retriever**: top-k=4 chunk più simili (cosine similarity).
+    - **Generator**: Ollama `llama3.1:8b` (quantizzato Q4_K_M).
+
+    **Interfaccia black-box**: l'attaccante vede solo query → risposta (+ opzionalmente gli ID chunk recuperati, se l'applicazione li espone). NON vede embedding, pesi modello, o contenuto pieno dei chunk — solo la risposta generata.
+
+    Gli attacchi MIA sfruttano *pattern nella risposta* (BLEU, perplexity, lunghezza generata) per inferire se un chunk era nel corpus indicizzato.
+    """)
 
     query = st.text_input("Inserisci query")
 
@@ -191,7 +239,20 @@ elif section == "Esplora RAG":
 # ====== SEZIONE 5: INGEST DOCUMENTI ======
 elif section == "Ingest Documenti":
     st.header("Ingest Nuovi Documenti")
-    st.info("Carica PDF/DOCX/MD/TXT → pseudonimizza → aggiungi a reports.jsonl. NB: richiede reindicizzazione RAG per attacchi.")
+    st.markdown("""
+    **Aggiungi documenti al corpus** (formato PDF, DOCX, Markdown, TXT).
+
+    **Pipeline**:
+    1. **Carica** file da UI.
+    2. **Estrai testo grezzo** (pypdf, python-docx, stdlib).
+    3. **Normalizza** (unicode space → ASCII, rimuovi nbsp).
+    4. **Pseudonimizza** (regex + NER `rizzo-pii-0.3B` → token `<TIPO>_<hash8>` + backstop ≥9 cifre).
+    5. **Append** a `data/processed/reports.jsonl` (4 campi: doc_id, company, text, has_person).
+
+    **NB**: dopo l'ingest, il RAG deve essere **reindicizzato** (riavvia dashboard) perché la cache `@st.cache_resource` tiene il vecchio corpus. Per test produttivi, rigenera il full-run con `run_ingestion.py` (processa l'intero `documenti/` batch).
+
+    📄 **Formati supportati**: PDF (via pypdf), DOCX (via python-docx), Markdown, plain text. Ogni formato passa per la stessa pipeline PII (ethical gate obbligatorio).
+    """)
 
     uploaded_file = st.file_uploader("Carica documento", type=["pdf", "docx", "md", "txt"])
 
