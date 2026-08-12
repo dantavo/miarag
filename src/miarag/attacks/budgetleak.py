@@ -46,6 +46,8 @@ def budgetleak_scores_fcm(rag, chunks: list[Chunk], seed: int = 42):
     X = np.array([_feature_vector(rag, c.text) for c in chunks], dtype=float)
     labels = [int(c.is_member) for c in chunks]
     cntr, u, *_ = fuzz.cluster.cmeans(X.T, c=2, m=2.0, error=1e-4, maxiter=200, seed=seed)
+    # ASSUMPTION: _feature_vector order = [rate_of_change, cumulative_fluctuation, final_sim]
+    # → cntr[:, 2] = cluster centroids on final_sim (index 2). Fragile if feature order changes.
     member_cluster = int(np.argmax(cntr[:, 2]))   # cluster con final_sim medio più alto
     scores = u[member_cluster].tolist()
     return scores, labels
