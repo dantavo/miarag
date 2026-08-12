@@ -48,10 +48,17 @@ src/miarag/
   ingestion.py      # PDF → testo → normalizzazione unicode → pseudonimizzazione
   corpus.py         # chunking (finestra char, overlap) + split membri/non-membri
   rag.py            # TargetRAG: interfaccia black-box (Chroma + Ollama) + perplexity
+  attacks/
+    s2mia.py        # S2MIA: BLEU + perplexity → XGBoost score
+    budgetleak.py   # BudgetLeak: Tri-Budget + Fuzzy C-Means zero-knowledge clustering
+  defenses.py       # difese text-based: paraphrase, prompt hardening
   metrics.py        # AUC, TPR@FPR, PPV-con-prior, membership advantage
+  plots.py          # ROC multi-attacco
 tests/              # suite offline (network-free), NER finto per i test
 scripts/
   run_ingestion.py  # ingest reale del corpus (fuori dal repo)
+  run_attack.py     # orchestrazione attacchi (indicizza SOLO membri, salva scores CSV)
+  run_eval.py       # valutazione (AUC/TPR@1%FPR/PPV, disaggregazione impresa vs persona)
 ```
 
 ## Setup
@@ -84,6 +91,32 @@ pseudonimizza e scrive JSONL in `data/processed/`:
 HF_HUB_DISABLE_XET=1 PYTHONPATH=src uv run python scripts/run_ingestion.py
 ```
 
+## Pipeline operativa
+
+Sequenza end-to-end (richiede Ollama attivo, `ollama serve`):
+
+```bash
+# 1. ingest del corpus (pseudonimizza → data/processed/reports.jsonl)
+HF_HUB_DISABLE_XET=1 PYTHONPATH=src uv run python scripts/run_ingestion.py
+
+# 2. esegui gli attacchi (indicizza SOLO i membri, salva results/scores_*.csv)
+PYTHONPATH=src uv run python scripts/run_attack.py
+
+# 3. valuta (AUC/TPR@1%FPR/PPV, disaggregazione impresa vs persona, results/summary.csv + roc.png)
+PYTHONPATH=src uv run python scripts/run_eval.py --prior 0.1
+
+# difese (trade-off security/utility): rieseguire gli attacchi sotto difesa
+PYTHONPATH=src uv run python scripts/run_attack.py --defense paraphrase
+PYTHONPATH=src uv run python scripts/run_attack.py --defense prompt_hardening
+```
+
+**Nota sui risultati.** Le difese text-based (paraphrase, prompt hardening)
+riducono il segnale testuale di S2MIA (BLEU/perplexity) ma **non bloccano
+BudgetLeak**, che è un side-channel comportamentale sul generation budget.
+L'analisi disaggregata per `has_person` (impresa vs persona) evidenzia il
+danno differenziale sulla privacy. I valori quantitativi (AUC, TPR, PPV)
+sono prodotti dalla pipeline sopra e riportati in tesi.
+
 ## Stato
 
 | Componente | Stato |
@@ -94,11 +127,11 @@ HF_HUB_DISABLE_XET=1 PYTHONPATH=src uv run python scripts/run_ingestion.py
 | Chunking + split membri | ✅ |
 | TargetRAG (black-box) | ✅ |
 | Metriche di attacco | ✅ |
-| Attacco S2MIA | ⏳ |
-| Attacco BudgetLeak | ⏳ |
-| Plot / grafici | ⏳ |
-| Orchestrazione end-to-end | ⏳ |
-| Difese + trade-off | ⏳ |
+| Attacco S2MIA | ✅ |
+| Attacco BudgetLeak | ✅ |
+| Plot / grafici | ✅ |
+| Orchestrazione end-to-end | ✅ |
+| Difese + trade-off | ✅ |
 
 ## Note
 

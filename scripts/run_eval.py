@@ -12,7 +12,10 @@ def _load(path: Path):
         for row in r:
             scores.append(float(row["score"]))
             labels.append(int(row["label"]))
-            has_person.append(int(row["has_person"]))
+            hp_val = int(row["has_person"])
+            if hp_val not in {0, 1}:
+                raise ValueError(f"has_person deve essere 0/1, trovato {hp_val}")
+            has_person.append(hp_val)
     return scores, labels, has_person
 
 def main():
@@ -46,6 +49,11 @@ def main():
             # Check if subgroup has both classes
             if len(set(sub_labels)) < 2:
                 print(f"{name}/{subgroup_name}: only one class present, skipping AUC")
+                continue
+            # Reliability threshold: skip if members < 10
+            n_members = sum(sub_labels)
+            if n_members < 10:
+                print(f"{name}/{subgroup_name}: solo {n_members} membri (<10), AUC non affidabile, skip")
                 continue
             sub_rep = evaluate(sub_scores, sub_labels, prior=args.prior)
             sub_row = {"attack": name, "subgroup": subgroup_name, **sub_rep.to_row()}
