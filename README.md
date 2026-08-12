@@ -45,7 +45,7 @@ Python 3.11, ambiente `uv`, tutto **locale** su Apple Silicon (accelerazione MPS
 src/miarag/
   config.py         # Settings (frozen dataclass) + get_settings()
   pseudonymize.py   # gate PII: regex + NER → token deterministici, backstop ≥9 cifre
-  ingestion.py      # PDF → testo → normalizzazione unicode → pseudonimizzazione
+  ingestion.py      # PDF/DOCX/MD/TXT → testo → normalizzazione → pseudonimizzazione
   corpus.py         # chunking (finestra char, overlap) + split membri/non-membri
   rag.py            # TargetRAG: interfaccia black-box (Chroma + Ollama) + perplexity
   attacks/
@@ -54,11 +54,14 @@ src/miarag/
   defenses.py       # difese text-based: paraphrase, prompt hardening
   metrics.py        # AUC, TPR@FPR, PPV-con-prior, membership advantage
   plots.py          # ROC multi-attacco
+  dashboard_helpers.py # logica pura per dashboard (nessun import streamlit, testabile)
 tests/              # suite offline (network-free), NER finto per i test
 scripts/
   run_ingestion.py  # ingest reale del corpus (fuori dal repo)
   run_attack.py     # orchestrazione attacchi (indicizza SOLO membri, salva scores CSV)
   run_eval.py       # valutazione (AUC/TPR@1%FPR/PPV, disaggregazione impresa vs persona)
+dashboard/
+  app.py            # Streamlit UI (5 sezioni: attacchi live, metriche, PII, RAG, ingest)
 ```
 
 ## Setup
@@ -117,6 +120,21 @@ L'analisi disaggregata per `has_person` (impresa vs persona) evidenzia il
 danno differenziale sulla privacy. I valori quantitativi (AUC, TPR, PPV)
 sono prodotti dalla pipeline sopra e riportati in tesi.
 
+## Dashboard (Streamlit)
+
+Layer di presentazione interattivo per esplorare il PoC. Richiede `uv run streamlit run dashboard/app.py`.
+
+**Prerequisiti:**
+- `data/processed/reports.jsonl` ingerito (vedi "Ingestion del corpus reale").
+- Ollama attivo (`ollama serve`) per attacchi live ed esplorazione RAG.
+
+**Sezioni:**
+1. **Attacchi Live** — S2MIA/BudgetLeak su Ollama in tempo reale (lento, limite configurabile su numero chunk).
+2. **Metriche & Grafici** — visualizza `results/summary.csv` e `roc.png` (da run_eval.py).
+3. **Gate PII** — demo pseudonimizzazione (input utente → output con token; regex-only per velocità).
+4. **Esplora RAG** — query black-box → risposta + chunk ID recuperati.
+5. **Ingest Documenti** — upload PDF/DOCX/MD/TXT → pseudonimizzazione + append a reports.jsonl.
+
 ## Stato
 
 | Componente | Stato |
@@ -132,6 +150,7 @@ sono prodotti dalla pipeline sopra e riportati in tesi.
 | Plot / grafici | ✅ |
 | Orchestrazione end-to-end | ✅ |
 | Difese + trade-off | ✅ |
+| Dashboard Streamlit | ✅ |
 
 ## Note
 

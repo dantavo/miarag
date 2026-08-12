@@ -24,6 +24,7 @@ dependencies = [
     "scikit-fuzzy>=0.5.0",
     "scikit-learn>=1.9.0",
     "sentence-transformers>=5.7.0",
+    "streamlit>=1.61.1",
     "transformers>=5.15.0",
     "xgboost>=3.2.0",
 ]
