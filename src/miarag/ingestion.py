@@ -25,7 +25,10 @@ def parse_report_text(raw: str, doc_id: str, ner: NerDetector | None = None) -> 
         has_person = len(fullname_spans) > 0
 
     company = next((ln.strip() for ln in raw.splitlines() if ln.strip()), doc_id)  # dal raw
-    clean = re.sub(r"[ \t]+", " ", raw)
+    # Normalizza spazi unicode (nbsp \xa0 e affini): senza questo i numeri delle
+    # tabelle di bilancio restano spezzati e sfuggono a regex/NER → leak PII.
+    clean = raw.replace("\xa0", " ").replace(" ", " ").replace(" ", " ")
+    clean = re.sub(r"[ \t]+", " ", clean)
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
     clean = pseudonymize_text(clean, ner=ner)
     return ReportDoc(doc_id=doc_id, company=company, text=clean, has_person=has_person)

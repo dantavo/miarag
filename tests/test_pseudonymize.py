@@ -1,4 +1,5 @@
 # tests/test_pseudonymize.py
+import re
 from miarag.pseudonymize import pseudonymize_text, token_for, regex_spans
 
 def test_cf_replaced_and_deterministic():
@@ -185,3 +186,127 @@ def test_genuinely_unknown_label_still_warns(caplog):
 
     assert spans == []
     assert "Unmapped entity_group from NER model: 'WEIRDLABEL'" in caplog.text
+
+class _OverlapNer:
+    """Fake NER returning overlapping spans like the real rizzo-pii model."""
+    def detect(self, text):
+        spans = []
+        # Repro case: '1.045    13690054749    P.IVA 01234567890 tel 3391234567'
+        # NER produces overlapping/nested spans
+        if "1.045" in text and "13690054749" in text:
+            # Spurious 1-char BUILDINGNUM nested inside "1.045"
+            i = text.find("1.045")
+            spans.append((i+2, i+3, "BUILDINGNUM"))  # '0' at offset 2-3
+        if "13690054749" in text:
+            # Off-by-one overlap: NER sees partial PIVA
+            i = text.find("13690054749")
+            spans.append((i+1, i+11, "PIVA"))  # '3690054749' - one char off from regex match
+        if "01234567890" in text:
+            i = text.find("01234567890")
+            # NER with leading space
+            spans.append((i-1, i+11, "PIVA"))  # ' 01234567890'
+        if "3391234567" in text:
+            i = text.find("3391234567")
+            # NER with leading space
+            spans.append((i-1, i+10, "PHONE"))  # ' 3391234567'
+        return spans
+
+def test_overlapping_ner_vs_regex_piva():
+    """Off-by-one NER-vs-regex PIVA overlap → exactly ONE token, no leftover digits."""
+    # Real regex will match the full 11-digit PIVA
+    t = "1.045    13690054749    P.IVA 01234567890 tel 3391234567"
+    out = pseudonymize_text(t, ner=_OverlapNer())
+
+    # The full 11-digit PIVAs must be tokenized (regex wins)
+    assert "13690054749" not in out
+    assert "01234567890" not in out
+    assert "3391234567" not in out
+
+    # Must have PIVA and PHONE tokens
+    assert "PIVA_" in out
+    assert "PHONE_" in out
+
+    # CRITICAL: no 9+ digit run may remain in cleartext (would be a PIVA/phone leak)
+    assert re.search(r'\d{9,}', out) is None, f"Found 9+ digit run in: {out}"
+
+def test_nested_spurious_buildingnum_dropped():
+    """Nested 1-char BUILDINGNUM inside a number → dropped, surrounding content intact."""
+    t = "1.045    13690054749    P.IVA 01234567890 tel 3391234567"
+    out = pseudonymize_text(t, ner=_OverlapNer())
+
+    # The spurious BUILDINGNUM at offset 2-3 ('0' inside "1.045") must be dropped
+    # because the regex PIVA span or the longer context should win
+    # Result: "1.045" either stays intact OR the whole number gets tokenized once
+    # but "1.045" must NOT become "1.BUILDINGNUM_..45"
+    assert "1.BUILDINGNUM_" not in out, f"Spurious nested BUILDINGNUM corrupted content: {out}"
+
+    # The number should either be intact or fully replaced by a PIVA token, not split
+    # In this case "1.045" is separate from the PIVA, so it should stay intact
+    if "PIVA_" in out:
+        # Check that we don't have partial corruption
+        assert ".BUILDINGNUM_" not in out
+
+def test_creditcard_and_catasto_mapped():
+    """CREDITCARDNUMBER e CATASTO (scoperti sui PDF reali) devono essere pseudonimizzati, non skippati."""
+    from miarag.pseudonymize import RizzoNerDetector
+    class _FakePipeline:
+        def __call__(self, text):
+            return [
+                {"entity_group": "CREDITCARDNUMBER", "start": 0, "end": 4, "score": 0.99},
+                {"entity_group": "CATASTO", "start": 5, "end": 9, "score": 0.99},
+            ]
+    det = RizzoNerDetector()
+    det._pipe = _FakePipeline()
+    spans = det.detect("1234 5678")
+    kinds = sorted(k for (_, _, k) in spans)
+    assert kinds == ["CATASTO", "CC"]
+
+def test_no_digit_leak_across_split_number():
+    """Bug reale: numeri di bilancio spezzati (nbsp) → NER tagga pezzi non contigui;
+    la ricostruzione per concatenazione non deve MAI riassemblare cifre in chiaro."""
+    # simula pezzi non contigui: NER marca due sottostringhe separate da spazio
+    class _SplitNer:
+        def detect(self, text):
+            spans = []
+            # marca solo il primo blocco di 4 cifre come PHONE, lascia il resto
+            i = text.find("1369")
+            if i >= 0:
+                spans.append((i, i + 4, "PHONE"))
+            return spans
+    t = "saldo 1369 0054749 fine"
+    out = pseudonymize_text(t, ner=_SplitNer())
+    # il pezzo taggato è tokenizzato, il resto resta com'era (NON deve incollarsi al token)
+    assert "PHONE_" in out
+    # token ben formato (8 hex), nessuna cifra reale appiccicata al prefisso
+    assert re.search(r"PHONE_[0-9a-f]{8}", out)
+    assert re.search(r"PHONE_\d{5,}", out) is None, f"cifre reali incollate al token: {out}"
+
+def test_long_digit_backstop_no_ner_no_regex():
+    """Fail-closed: una sequenza ≥9 cifre non catturata da NER né regex viene comunque tokenizzata."""
+    out = pseudonymize_text("id interno 936795600 nel testo")  # ner=None, non è PIVA(11)/REA(lettere)
+    assert "936795600" not in out
+    assert re.search(r"NUM_[0-9a-f]{8}", out)
+    assert re.search(r"\d{9,}", out) is None
+
+def test_ner_vs_ner_overlap():
+    """Two overlapping NER spans → only one accepted, no overlap in output."""
+    class _DoubleNer:
+        def detect(self, text):
+            # Two overlapping PERSON spans
+            if "Mario Rossi Bianchi" in text:
+                i = text.find("Mario Rossi Bianchi")
+                return [
+                    (i, i+11, "PERSON"),      # "Mario Rossi"
+                    (i+6, i+19, "PERSON"),    # "Rossi Bianchi" - overlaps with first
+                ]
+            return []
+
+    t = "Il sig. Mario Rossi Bianchi è presente."
+    out = pseudonymize_text(t, ner=_DoubleNer())
+
+    # Only one PERSON token should appear (the first/longer one wins)
+    person_tokens = [w for w in out.split() if "PERSON_" in w]
+    assert len(person_tokens) == 1, f"Expected 1 PERSON token, got {len(person_tokens)}: {out}"
+
+    # The overlapping region should not be double-tokenized
+    assert out.count("PERSON_") == 1
