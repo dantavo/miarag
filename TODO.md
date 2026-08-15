@@ -23,7 +23,11 @@ have been cleaned up during history rewrite.
 - [x] Optional persistent Chroma via `persist_dir=...` in TargetRAG.
 - [x] Provider-agnostic tests (`tests/test_providers.py`): Protocol contract,
   DI composition, swap provider, cost tracking, persistent chroma.
-  **63 total tests, 62 pass, 1 known skip**.
+- [x] **RAG-MIA (Anderson 2025)** as third attack: prompt injection black-box.
+  `src/miarag/attacks/rag_mia.py` + 13 tests. Wired into `run_attack.py`,
+  `run_eval.py`, dashboard live attacks. Score in [0,1]: Yes=1, No=0,
+  refusal=0.5 (defense-aware for prompt hardening).
+  **76 total tests, 75 pass, 1 known skip**.
 
 ## To do (decreasing priority)
 

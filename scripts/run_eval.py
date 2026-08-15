@@ -62,7 +62,7 @@ def main():
     s = get_settings()
     by_attack, rows = {}, []
 
-    for name in ["s2mia", "budgetleak"]:
+    for name in ["s2mia", "budgetleak", "rag_mia"]:
         path = s.results_dir / f"scores_{name}.csv"
         if not path.exists():
             continue

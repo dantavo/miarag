@@ -16,9 +16,11 @@ only through its interface (question → answer).
 
 ## What it measures
 
-Two attacks implemented on top of the same black-box interface, plus baselines
+Three attacks implemented on top of the same black-box interface, plus baselines
 described in the thesis:
 
+- **RAG-MIA** (Anderson 2025) — prompt injection: asks the LLM whether the
+  target document appears in the retrieved context. Score = parsed Yes/No.
 - **S2MIA** — signal from *BLEU* (answer↔document overlap) + *perplexity*
   (local LM proxy) + optional *cosine similarity* (via embedder).
 - **BudgetLeak** — side-channel on the *generation budget* (max_tokens /
@@ -73,6 +75,7 @@ src/miarag/
   attacks/
     s2mia.py              # S2MIA: BLEU + perplexity (+ optional cosine) → XGBoost score
     budgetleak.py         # BudgetLeak: Tri-Budget + Fuzzy C-Means zero-knowledge clustering
+    rag_mia.py            # RAG-MIA (Anderson 2025): prompt injection black-box
   defenses.py             # text-based defenses: paraphrase, prompt hardening
   metrics.py              # AUC, TPR@FPR, PPV-with-prior, membership advantage
   plots.py                # multi-attack ROC
@@ -200,6 +203,7 @@ embedder / perplexity backends at runtime.
 | Attack metrics | ✅ |
 | S2MIA attack | ✅ |
 | BudgetLeak attack | ✅ |
+| RAG-MIA attack (Anderson 2025) | ✅ |
 | Plots / charts | ✅ |
 | End-to-end orchestration | ✅ |
 | Defenses + trade-off | ✅ |

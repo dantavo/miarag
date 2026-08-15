@@ -4,6 +4,7 @@ from pathlib import Path
 from miarag.pseudonymize import pseudonymize_text
 from miarag.attacks.s2mia import s2mia_features
 from miarag.attacks.budgetleak import budget_sequence, budget_features
+from miarag.attacks.rag_mia import rag_mia_features
 
 def load_summary_rows(path: Path) -> list[dict]:
     """Legge results/summary.csv → lista di dict. [] se il file non esiste."""
@@ -28,3 +29,13 @@ def live_budgetleak_on_chunk(rag, chunk_text: str) -> dict:
     seq = budget_sequence(rag, chunk_text)
     bf = budget_features(seq)
     return {"sequence": list(seq), **bf, "score": float(bf["rate_of_change"] + bf["final_sim"])}
+
+def live_rag_mia_on_chunk(rag, chunk_text: str, language: str = "it") -> dict:
+    """Attacco RAG-MIA (Anderson 2025) su UN chunk. Prompt injection black-box.
+    Ritorna la risposta LLM + parsed yes_score ∈ [0, 1] come score membership."""
+    f = rag_mia_features(rag, chunk_text, language=language)
+    return {
+        "answer": f["answer"],
+        "retrieved_ids": f["retrieved_ids"],
+        "score": float(f["yes_score"]),
+    }

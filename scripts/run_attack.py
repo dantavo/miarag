@@ -9,6 +9,7 @@ from miarag.rag import TargetRAG
 from miarag.providers import build_llm, build_embedder, build_perplexity
 from miarag.attacks.s2mia import s2mia_scores
 from miarag.attacks.budgetleak import budgetleak_scores
+from miarag.attacks.rag_mia import rag_mia_scores
 from miarag.defenses import apply_defense
 
 def _load_reports(path: Path) -> list[ReportDoc]:
@@ -69,7 +70,7 @@ def main():
     # suffix for non-none defenses
     suffix = "" if args.defense == "none" else f"_{args.defense}"
 
-    for name, fn in [("s2mia", s2mia_scores), ("budgetleak", budgetleak_scores)]:
+    for name, fn in [("s2mia", s2mia_scores), ("budgetleak", budgetleak_scores), ("rag_mia", rag_mia_scores)]:
         scores, labels = fn(rag, targets)
         _save(s.results_dir / f"scores_{name}{suffix}.csv", targets, scores, labels)
         print(f"{name}: saved {len(scores)} scores")
