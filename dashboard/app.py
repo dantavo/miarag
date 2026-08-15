@@ -79,6 +79,39 @@ if section == "Attacchi Live":
     """)
     st.info("💡 **Per la tesi**: questi attacchi dimostrano che un attaccante black-box (solo query→risposta) può inferire membership del corpus RAG senza accesso ai pesi del modello.")
 
+    with st.expander("📖 Come funziona S2MIA (prompt adversarial)"):
+        st.markdown("""
+        **S2MIA** sfrutta la **somiglianza testuale** tra risposta generata e documento target.
+
+        **Step 1 — Split del chunk bersaglio (50/50)**:
+        ```
+        Chunk completo (500 token):
+        "Il contratto prevede un massimale di 50.000 euro con franchigia del 10%.
+         La polizza copre danni da incendio, alluvione e furto. Durata: 24 mesi."
+
+        → Query (prima metà, 250 token):
+           "Il contratto prevede un massimale di 50.000 euro con franchigia del 10%."
+
+        → Expected answer (seconda metà, 250 token):
+           "La polizza copre danni da incendio, alluvione e furto. Durata: 24 mesi."
+        ```
+
+        **Step 2 — Prompt adversarial inviato al RAG**:
+        ```
+        Rispondi alla seguente domanda basandoti esclusivamente sul contesto fornito.
+        Domanda: Il contratto prevede un massimale di 50.000 euro con franchigia del 10%.
+        Rispondi in modo conciso e preciso.
+        ```
+
+        **Step 3 — Misurazione**:
+        - Se chunk è **membro** → retriever lo pesca tra top-4 → risposta generata ricalca letteralmente il chunk → **BLEU alto** (0.6-0.9) + **perplexity bassa** (50-100).
+        - Se chunk è **non-membro** → retriever pesca altro → risposta generica o parafrasata → **BLEU basso** (0.1-0.3) + **perplexity alta** (200-500).
+
+        **Perché funziona**: la richiesta "basandoti esclusivamente sul contesto" forza il modello a citare quasi verbatim il contesto recuperato, massimizzando la sovrapposizione testuale (BLEU) quando il chunk target è presente.
+
+        **Contro-misura**: parafrasi o prompt modification ("riassumi senza ripetere") spezzano BLEU e portano AUC da 0.75-0.85 a 0.50-0.60 (casuale).
+        """)
+
     max_chunks = st.number_input("Max chunk da testare", min_value=1, max_value=20, value=5, step=1)
     attack_type = st.radio("Tipo attacco", ["S2MIA", "BudgetLeak"])
 
@@ -196,11 +229,20 @@ elif section == "Gate PII":
     🔒 **Ethical clearance**: nessun dato PII reale entra nel RAG né nel repository GitHub. Artefatti (reports.jsonl, results/) git-ignored.
     """)
 
-    user_text = st.text_area("Inserisci testo con PII", height=150, value="Amministratore CF RSSMRA80A01F205X presente. P.IVA 01234567890.")
+    user_text = st.text_area("Inserisci testo con PII", height=150, value="Amministratore CF RSSMRA80A01F205X presente. P.IVA 01234567890. Il signor Massimo d'annunzio nato nel 1985 a Cosenza")
+
+    enable_ner = st.checkbox("Abilita NER (lento, ~5-10s)", value=False)
+    st.caption("⚠️ NER rizzo-pii-0.3B rileva nomi persona, luoghi, org — ma richiede download modello (~1.2 GB) e inferenza transformer.")
 
     if st.button("Pseudonimizza"):
         if user_text.strip():
-            pseudo = pii_demo(user_text)
+            if enable_ner:
+                with st.spinner("Caricamento NER rizzo-pii-0.3B..."):
+                    from miarag.pseudonymize import RizzoNerDetector
+                    ner = RizzoNerDetector()
+                    pseudo = pii_demo(user_text, ner=ner)
+            else:
+                pseudo = pii_demo(user_text, ner=None)
             st.subheader("Testo pseudonimizzato")
             st.code(pseudo, language=None)
         else:
