@@ -6,6 +6,9 @@ Richiede credenziali AWS (env o profilo ~/.aws/credentials) + BEDROCK_CLAUDE_MOD
 from __future__ import annotations
 from dataclasses import dataclass
 
+from miarag.providers._retry import api_retry
+from miarag.providers._cost import TRACKER
+
 
 @dataclass
 class BedrockProvider:
@@ -20,11 +23,15 @@ class BedrockProvider:
             region_name=self.region,
         )
 
+    @api_retry
+    def _invoke(self, prompt: str, max_tokens: int):
+        return self._llm.invoke(prompt, model_kwargs={"max_tokens": max_tokens})
+
     def generate(self, prompt: str, max_tokens: int) -> str:
-        # Bedrock/Claude: max_tokens via model_kwargs.
-        resp = self._llm.invoke(prompt, model_kwargs={"max_tokens": max_tokens})
-        return resp.content if hasattr(resp, "content") else str(resp)
+        resp = self._invoke(prompt, max_tokens)
+        content = resp.content if hasattr(resp, "content") else str(resp)
+        TRACKER.record(self.name, prompt, content)
+        return content
 
     def supports_logprobs(self) -> bool:
-        # Claude su Bedrock non espone logprobs per-token.
         return False

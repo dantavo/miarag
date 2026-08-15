@@ -10,6 +10,9 @@ API-based può usare direttamente questi logprobs invece del proxy GPT-2.
 from __future__ import annotations
 from dataclasses import dataclass
 
+from miarag.providers._retry import api_retry
+from miarag.providers._cost import TRACKER
+
 
 @dataclass
 class AzureOpenAIProvider:
@@ -29,11 +32,15 @@ class AzureOpenAIProvider:
             max_tokens=None,  # settato per invoke
         )
 
+    @api_retry
+    def _invoke(self, prompt: str, max_tokens: int):
+        return self._llm.invoke(prompt, max_tokens=max_tokens)
+
     def generate(self, prompt: str, max_tokens: int) -> str:
-        # Azure/OpenAI: max_tokens è param diretto.
-        resp = self._llm.invoke(prompt, max_tokens=max_tokens)
-        # AzureChatOpenAI ritorna AIMessage; estrai content.
-        return resp.content if hasattr(resp, "content") else str(resp)
+        resp = self._invoke(prompt, max_tokens)
+        content = resp.content if hasattr(resp, "content") else str(resp)
+        TRACKER.record(self.name, prompt, content)
+        return content
 
     def supports_logprobs(self) -> bool:
         return True

@@ -26,6 +26,7 @@ dependencies = [
     "sentence-transformers>=5.7.0",
     "streamlit>=1.61.1",
     "transformers>=5.15.0",
+    "tenacity>=9.0.0",
     "xgboost>=3.2.0",
 ]
 

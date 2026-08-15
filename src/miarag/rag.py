@@ -30,7 +30,7 @@ _PROMPT = (
 
 class TargetRAG:
     def __init__(self, *args, llm=None, embedder=None, ppl=None, top_k: int = 4,
-                 collection_name: str = "miarag", **kwargs):
+                 collection_name: str = "miarag", persist_dir: str | None = None, **kwargs):
         # ─── Backcompat v0.1-thesis: positional (embedding_model, url, model, top_k) ──
         if args and llm is None and embedder is None:
             embedding_model = args[0]
@@ -55,8 +55,17 @@ class TargetRAG:
         if llm is not None:
             self._generate = lambda prompt, max_tokens: llm.generate(prompt, max_tokens)
 
-        self._client = chromadb.EphemeralClient()
-        self._coll = self._client.create_collection(collection_name)
+        # Vector store: ephemeral (default, v0.1-thesis) o persistente (persist_dir).
+        if persist_dir:
+            from pathlib import Path
+            Path(persist_dir).mkdir(parents=True, exist_ok=True)
+            self._client = chromadb.PersistentClient(path=str(persist_dir))
+            # get_or_create per riuso su rerun.
+            self._coll = self._client.get_or_create_collection(collection_name)
+        else:
+            self._client = chromadb.EphemeralClient()
+            # get_or_create evita crash su collision in test multi-istanza.
+            self._coll = self._client.get_or_create_collection(collection_name)
 
     # ─── Test helper (v0.1-thesis API) ────────────────────────────────────
     def _configure_for_test(self, embedder, generate, top_k):

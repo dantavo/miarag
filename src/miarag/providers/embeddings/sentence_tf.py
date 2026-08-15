@@ -14,8 +14,10 @@ class SentenceTransformerEmbedder:
     def __post_init__(self):
         from sentence_transformers import SentenceTransformer
         self._st = SentenceTransformer(self.model)
-        # dim: probe con dummy encode
-        self.dim = int(self._st.get_sentence_embedding_dimension() or 0)
+        # get_embedding_dimension (nuovo) con fallback su get_sentence_embedding_dimension (vecchio).
+        _dim_fn = getattr(self._st, "get_embedding_dimension", None) \
+            or getattr(self._st, "get_sentence_embedding_dimension", None)
+        self.dim = int(_dim_fn() or 0) if _dim_fn else 0
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         return self._st.encode(list(texts)).tolist()
