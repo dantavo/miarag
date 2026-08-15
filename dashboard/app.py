@@ -48,11 +48,14 @@ def _get_rag_with_corpus():
     members, non_members = split_members(chunks, member_frac=0.5, seed=settings.seed)
     if not members:
         return None
+    # Provider-agnostic construction via factory (v0.2). Provider scelti da env/Settings.
+    from miarag.providers import build_llm, build_embedder, build_perplexity
+    settings.validate()
     rag = TargetRAG(
-        embedding_model=settings.embedding_model,
-        ollama_base_url=settings.ollama_base_url,
-        ollama_model=settings.ollama_model,
-        top_k=settings.top_k
+        llm=build_llm(settings),
+        embedder=build_embedder(settings),
+        ppl=build_perplexity(settings),
+        top_k=settings.top_k,
     )
     rag.index(members)
     return rag, members, non_members
@@ -63,6 +66,34 @@ section = st.sidebar.radio(
     "Sezione",
     ["Attacchi Live", "Metriche & Grafici", "Gate PII", "Esplora RAG", "Ingest Documenti"]
 )
+
+# Provider selection (v0.2). Salva in env → get_settings() rilegge.
+with st.sidebar.expander("Provider (avanzato)"):
+    import os as _os
+    llm_choice = st.selectbox(
+        "LLM provider",
+        ["ollama", "azure_openai", "bedrock"],
+        index=["ollama", "azure_openai", "bedrock"].index(settings.llm_provider),
+        help="azure_openai/bedrock richiedono chiavi in .env",
+    )
+    embed_choice = st.selectbox(
+        "Embedding provider",
+        ["sentence_tf", "openai_embed"],
+        index=["sentence_tf", "openai_embed"].index(settings.embedding_provider),
+    )
+    ppl_choice = st.selectbox(
+        "Perplexity scorer",
+        ["gpt2", "hf_causal"],
+        index=["gpt2", "hf_causal"].index(settings.perplexity_provider),
+        help="hf_causal legge PERPLEXITY_HF_MODEL (es. Minerva-350M per IT)",
+    )
+    if st.button("Applica provider (ricostruisce RAG)"):
+        _os.environ["LLM_PROVIDER"] = llm_choice
+        _os.environ["EMBEDDING_PROVIDER"] = embed_choice
+        _os.environ["PERPLEXITY_PROVIDER"] = ppl_choice
+        _get_rag_with_corpus.clear()   # invalida cache
+        st.rerun()
+    st.caption(f"Attivi: llm={settings.llm_provider} · emb={settings.embedding_provider} · ppl={settings.perplexity_provider}")
 
 # ====== SEZIONE 1: ATTACCHI LIVE ======
 if section == "Attacchi Live":

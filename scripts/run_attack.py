@@ -6,6 +6,7 @@ from miarag.config import get_settings
 from miarag.ingestion import ReportDoc
 from miarag.corpus import chunk_documents, split_members, Chunk
 from miarag.rag import TargetRAG
+from miarag.providers import build_llm, build_embedder, build_perplexity
 from miarag.attacks.s2mia import s2mia_scores
 from miarag.attacks.budgetleak import budgetleak_scores
 from miarag.defenses import apply_defense
@@ -33,10 +34,29 @@ def _save(path: Path, chunks, scores, labels):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--defense", choices=["none", "paraphrase", "prompt_hardening"], default="none")
+    parser.add_argument("--llm", choices=["ollama", "azure_openai", "bedrock"], default=None,
+                        help="Override LLM_PROVIDER env. Default: da Settings.")
+    parser.add_argument("--embed", choices=["sentence_tf", "openai_embed"], default=None,
+                        help="Override EMBEDDING_PROVIDER env.")
+    parser.add_argument("--ppl", choices=["gpt2", "hf_causal"], default=None,
+                        help="Override PERPLEXITY_PROVIDER env.")
     args = parser.parse_args()
 
+    # CLI override → env → default. get_settings() rilegge env.
+    import os
+    if args.llm: os.environ["LLM_PROVIDER"] = args.llm
+    if args.embed: os.environ["EMBEDDING_PROVIDER"] = args.embed
+    if args.ppl: os.environ["PERPLEXITY_PROVIDER"] = args.ppl
+
     s = get_settings()
-    rag = TargetRAG(s.embedding_model, s.ollama_base_url, s.ollama_model, s.top_k)
+    s.validate()   # fail-fast su chiavi mancanti
+
+    llm = build_llm(s)
+    embedder = build_embedder(s)
+    ppl = build_perplexity(s)
+    rag = TargetRAG(llm=llm, embedder=embedder, ppl=ppl, top_k=s.top_k)
+
+    print(f"provider: llm={llm.name} embed={embedder.name} ppl={ppl.name}")
 
     # Apply defense wrapper (NOTE: text-based defenses knock down S2MIA BLEU/perplexity signal
     # but do NOT stop BudgetLeak, a behavioral side-channel — key finding of the thesis)
