@@ -1,23 +1,23 @@
-# Ollama — guida operativa per la PoC
+# Ollama — operational guide for the PoC
 
-Manuale minimale per gestire i modelli locali usati come **target** della PoC MIA-su-RAG.
-Ollama gira come daemon in background ed espone un'API HTTP su `http://localhost:11434`
-(la stessa che LangChain usa via `langchain-ollama`).
+Minimal manual to manage the local models used as **targets** in the MIA-on-RAG
+PoC. Ollama runs as a background daemon and exposes an HTTP API on
+`http://localhost:11434` (the same one LangChain uses via `langchain-ollama`).
 
-I pesi dei modelli **non** stanno nel Vault: vivono in `~/.ollama/models`. Il Vault contiene
-solo il codice PoC (`master/miarag/`) e questo manuale.
+Model weights **do not** live in the Vault: they live in `~/.ollama/models`.
+The Vault only holds the PoC code (`master/miarag/`) and this manual.
 
 ---
 
-## 1. Prerequisiti / installazione
+## 1. Prerequisites / installation
 
-Installato via Homebrew (una volta sola):
+Installed via Homebrew (one-off):
 
 ```bash
 brew install ollama
 ```
 
-Verifica versione:
+Version check:
 
 ```bash
 ollama --version
@@ -25,21 +25,21 @@ ollama --version
 
 ---
 
-## 2. Avviare / fermare il daemon
+## 2. Start / stop the daemon
 
-Ollama deve essere in esecuzione perché i comandi `run`/`pull` e l'API rispondano.
+Ollama must be running for `run`/`pull` commands and the API to respond.
 
 ```bash
-# Avvio in foreground (occupa il terminale, log a schermo):
+# Foreground start (occupies the terminal, logs to screen):
 ollama serve
 
-# Oppure come servizio in background gestito da Homebrew (si riavvia da solo al login):
+# Or as a background service managed by Homebrew (auto-restarts on login):
 brew services start ollama
-brew services stop ollama      # ferma il servizio
-brew services list             # stato dei servizi brew
+brew services stop ollama      # stop the service
+brew services list             # brew service status
 ```
 
-Test che il daemon risponda:
+Test that the daemon responds:
 
 ```bash
 curl http://localhost:11434/api/version
@@ -47,98 +47,99 @@ curl http://localhost:11434/api/version
 
 ---
 
-## 3. Scaricare un modello (pull)
+## 3. Download a model (pull)
 
 ```bash
-ollama pull llama3.1:8b        # target primario PoC (~4.9 GB)
-ollama pull qwen2.5:3b         # modello piccolo/veloce per iterare (~2 GB)
+ollama pull llama3.1:8b        # primary PoC target (~4.9 GB)
+ollama pull qwen2.5:3b         # small/fast model for iteration (~2 GB)
 ```
 
-Note pratiche:
+Practical notes:
 
-- Il pull scarica ~5 GB: **fallo su WiFi stabile**, non su hotspot. Su rete instabile
-  può interrompersi con `Error: max retries exceeded: unexpected EOF`.
-- Il pull è **ripristinabile**: rilanciando lo stesso `pull` riprende da dove si era
-  fermato, non riparte da zero.
-- Il tag dopo i due punti è la quantizzazione/variante di default (per `llama3.1:8b`
-  è Q4_0). Per varianti diverse: vedi la pagina del modello su ollama.com/library.
+- The pull downloads ~5 GB: **use stable WiFi**, not a hotspot. On unstable
+  networks it may abort with `Error: max retries exceeded: unexpected EOF`.
+- The pull is **resumable**: relaunching the same `pull` resumes from where it
+  stopped, it does not restart from scratch.
+- The tag after the colon is the default quantization/variant (for
+  `llama3.1:8b` it's Q4_0). For different variants: see the model page on
+  ollama.com/library.
 
 ---
 
-## 4. Usare un modello
+## 4. Use a model
 
 ```bash
-# Chat interattiva (esci con /bye):
+# Interactive chat (quit with /bye):
 ollama run llama3.1:8b
 
-# Prompt secco one-shot:
-ollama run llama3.1:8b "Riassumi in una riga cos'è un RAG."
+# One-shot prompt:
+ollama run llama3.1:8b "Summarize in one line what a RAG is."
 
-# Via API HTTP (quello che fa LangChain sotto il cofano):
+# Via HTTP API (what LangChain does under the hood):
 curl http://localhost:11434/api/generate -d '{
   "model": "llama3.1:8b",
-  "prompt": "Ciao",
+  "prompt": "Hello",
   "stream": false
 }'
 ```
 
-Nel codice PoC il modello si seleziona con la variabile `OLLAMA_TARGET_MODEL` in `.env`
-(default `llama3.1:8b`), endpoint da `OLLAMA_BASE_URL`.
+In the PoC code the model is selected via the `OLLAMA_TARGET_MODEL` env var in
+`.env` (default `llama3.1:8b`), endpoint via `OLLAMA_BASE_URL`.
 
 ---
 
-## 5. Ispezionare cosa c'è installato
+## 5. Inspect what is installed
 
 ```bash
-ollama list                    # modelli scaricati + dimensione
-ollama ps                      # modelli attualmente caricati in RAM
-ollama show llama3.1:8b        # dettagli: parametri, quantizzazione, template
-du -sh ~/.ollama/models        # spazio totale occupato su disco
+ollama list                    # downloaded models + size
+ollama ps                      # models currently loaded in RAM
+ollama show llama3.1:8b        # details: params, quantization, template
+du -sh ~/.ollama/models        # total disk usage
 ```
 
 ---
 
-## 6. Pulizia / liberare spazio (clean)
+## 6. Cleanup / free space
 
-I pesi occupano diversi GB l'uno. Per recuperare spazio:
+Weights take several GB each. To reclaim space:
 
 ```bash
-# Rimuovere un singolo modello (cancella i suoi pesi da disco):
+# Remove a single model (deletes its weights from disk):
 ollama rm qwen2.5:3b
 
-# Scaricare dalla RAM un modello caricato senza cancellarlo da disco:
+# Unload from RAM a model without deleting from disk:
 ollama stop llama3.1:8b
 
-# Vedere cosa occupa spazio prima di cancellare:
+# See what's taking space before deleting:
 ollama list
 du -sh ~/.ollama/models
 ```
 
-Pulizia più aggressiva (attenzione: cancella TUTTO):
+Aggressive cleanup (careful: deletes EVERYTHING):
 
 ```bash
-# Cancella tutti i modelli scaricati (dovrai ri-pullarli):
+# Delete all downloaded models (you'll need to re-pull them):
 rm -rf ~/.ollama/models/*
 
-# Disinstallare Ollama del tutto (se non serve più):
+# Uninstall Ollama entirely (if no longer needed):
 brew services stop ollama
 brew uninstall ollama
-rm -rf ~/.ollama              # rimuove modelli + config residui
+rm -rf ~/.ollama              # remove residual models + config
 ```
 
-Regola pratica per la PoC: tieni solo i modelli che stai usando come target.
-Un `llama3.1:8b` (~5 GB) + un modello piccolo bastano; il resto `ollama rm`.
+Rule of thumb for the PoC: keep only the models you actively use as targets.
+A `llama3.1:8b` (~5 GB) + one small model is enough; `ollama rm` the rest.
 
 ---
 
-## 7. Problemi comuni
+## 7. Common problems
 
-| Sintomo | Causa probabile | Rimedio |
+| Symptom | Likely cause | Fix |
 |---|---|---|
-| `connection refused` su :11434 | daemon non attivo | `ollama serve` o `brew services start ollama` |
-| `max retries exceeded: unexpected EOF` durante pull | rete instabile (hotspot) | rilancia `ollama pull` su WiFi stabile (riprende) |
-| Generazione lentissima / swap | modello troppo grande per 32 GB | usa 7-8B quantizzato, non 70B |
-| `model not found` | tag sbagliato o non pullato | `ollama list`, poi `ollama pull <nome>` |
+| `connection refused` on :11434 | daemon not running | `ollama serve` or `brew services start ollama` |
+| `max retries exceeded: unexpected EOF` during pull | unstable network (hotspot) | retry `ollama pull` on stable WiFi (resumes) |
+| Extremely slow generation / swapping | model too large for 32 GB | use quantized 7–8B, not 70B |
+| `model not found` | wrong tag or not pulled | `ollama list`, then `ollama pull <name>` |
 
-Hardware di riferimento: Apple M5, 32 GB unified RAM. Regge bene 7-8B quantizzati;
-i 70B non girano in locale — per quelli usa i target via API (Bedrock/Azure) o EC2.
+Reference hardware: Apple M5, 32 GB unified RAM. Handles quantized 7–8B well;
+70B models won't run locally — for those, use API targets (Bedrock/Azure) or EC2.

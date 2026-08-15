@@ -1,159 +1,216 @@
-# MIA-RAG PoC — Membership Inference Attacks su un sistema RAG
+# MIA-RAG PoC — Membership Inference Attacks on a RAG System
 
-Proof-of-Concept sperimentale a corredo della tesi magistrale: verifica se un
-attaccante *black-box* può stabilire quali documenti fanno parte del corpus
-indicizzato da un sistema **RAG** (Retrieval-Augmented Generation), interrogando
-il sistema solo attraverso la sua interfaccia (domanda → risposta).
+Experimental proof-of-concept accompanying a master's thesis: verify whether a
+*black-box* attacker can determine which documents belong to the corpus
+indexed by a **RAG** (Retrieval-Augmented Generation) system by querying it
+only through its interface (question → answer).
 
-> ⚠️ **Privacy / dati.** Il corpus reale (report aziendali con PII) **non è nel
-> repository** ed è escluso via `.gitignore` (`documenti/`, `data/`, `results/`,
-> `.env`). Prima di essere indicizzato, ogni documento passa da una pipeline di
-> **pseudonimizzazione** che sostituisce gli identificatori diretti (nomi, CF,
-> P.IVA, IBAN, email, telefoni, indirizzi, …) con token deterministici
-> `<TIPO>_<hash8>`, con un *backstop fail-closed* su qualunque sequenza ≥9 cifre
-> residua. Il repository contiene **solo codice e test sintetici**.
+> ⚠️ **Privacy / data.** The real corpus (business reports with PII) is **not**
+> in this repository and is excluded via `.gitignore` (`documenti/`, `data/`,
+> `results/`, `.env`). Before indexing, every document is processed by a
+> **pseudonymization** pipeline that replaces direct identifiers (names, tax
+> codes, VAT numbers, IBAN, email, phone, addresses, …) with deterministic
+> tokens `<TYPE>_<hash8>`, backed by a *fail-closed backstop* on any residual
+> digit sequence ≥ 9 characters. The repository contains **only code and
+> synthetic tests**.
 
-## Cosa misura
+## What it measures
 
-Due attacchi implementati sopra la stessa interfaccia black-box, più le baseline
-descritte in tesi:
+Two attacks implemented on top of the same black-box interface, plus baselines
+described in the thesis:
 
-- **S2MIA** — segnale da *BLEU* (sovrapposizione risposta↔documento) + *perplexity*
-  (proxy LM locale).
-- **BudgetLeak** — side-channel sul *generation budget* (`num_predict` di Ollama).
+- **S2MIA** — signal from *BLEU* (answer↔document overlap) + *perplexity*
+  (local LM proxy) + optional *cosine similarity* (via embedder).
+- **BudgetLeak** — side-channel on the *generation budget* (max_tokens /
+  `num_predict` depending on backend).
 
-Metriche di attacco (modulo `metrics`): **AUC/ROC**, **TPR@1%FPR**, **PPV con prior**
-di membership (forma Bayesiana `PPV = π·TPR / (π·TPR + (1−π)·FPR)`), **membership
-advantage** (`TPR − FPR`).
+Attack metrics (`metrics` module): **AUC/ROC**, **TPR@1%FPR**, **PPV with
+membership prior** (Bayesian form `PPV = π·TPR / (π·TPR + (1−π)·FPR)`),
+**membership advantage** (`TPR − FPR`).
 
 ## Stack
 
-Python 3.11, ambiente `uv`, tutto **locale** su Apple Silicon (accelerazione MPS/Metal).
+Python 3.11, `uv` environment, everything runs **locally** by default on Apple
+Silicon (MPS/Metal acceleration). Provider-agnostic since v0.2: swap LLM,
+embedder, and perplexity scorer without touching attack code.
 
-- **RAG:** LangChain + **Chroma** (vector DB in-memory) + `sentence-transformers`
-  (MiniLM, embedding locali).
-- **Target LLM:** **Ollama** (`llama3.1:8b`) come modello primario. Opzioni
-  intercambiabili previste: GPT-4o-mini via Azure OpenAI, Claude via AWS Bedrock
-  (chiavi in `.env`).
-- **Perplexity:** Ollama v0.32.7 non espone logprobs via `/api/generate` → proxy
-  GPT-2 locale via `transformers` (`exp(mean NLL)`).
-- **PII:** regex (CF/P.IVA/REA) + NER italiano `rizzo-pii-0.3B` (`transformers`).
+- **RAG:** LangChain + **Chroma** (in-memory or persistent vector DB) +
+  pluggable embedding backend.
+- **Target LLM:** provider-agnostic. Built-in:
+  - `ollama` — `llama3.1:8b` local (primary, thesis default).
+  - `azure_openai` — GPT-4o-mini via Azure OpenAI (API keys in `.env`).
+  - `bedrock` — Claude via AWS Bedrock (AWS credentials in `.env`).
+- **Embeddings:** `sentence_tf` (local MiniLM/BGE) or `openai_embed` (Azure).
+- **Perplexity:** `gpt2` (local proxy, EN) or `hf_causal` (any HF causal LM,
+  useful for Italian corpora via e.g. Minerva). Ollama v0.32.7 does not
+  expose per-token logprobs via `/api/generate`, so a proxy LM is used.
+- **PII:** regex (Italian tax codes, VAT, REA) + Italian NER `rizzo-pii-0.3B`
+  (`transformers`).
 
-## Struttura
+## Structure
 
 ```
 src/miarag/
-  config.py         # Settings (frozen dataclass) + get_settings()
-  pseudonymize.py   # gate PII: regex + NER → token deterministici, backstop ≥9 cifre
-  ingestion.py      # PDF/DOCX/MD/TXT → testo → normalizzazione → pseudonimizzazione
-  corpus.py         # chunking (finestra char, overlap) + split membri/non-membri
-  rag.py            # TargetRAG: interfaccia black-box (Chroma + Ollama) + perplexity
+  config.py               # Settings (frozen dataclass) + validate() + get_settings()
+  pseudonymize.py         # PII gate: regex + NER → deterministic tokens, ≥9-digit backstop
+  ingestion.py            # PDF/DOCX/MD/TXT → text → normalization → pseudonymization
+  corpus.py               # chunking (char window, overlap) + member/non-member split
+  rag.py                  # TargetRAG: black-box interface + DI (llm/embedder/ppl)
+  providers/              # v0.2 pluggable backends
+    base.py               # Protocols: LLMProvider, EmbeddingProvider, PerplexityScorer
+    __init__.py           # factory + registry (lazy import)
+    ollama.py             # OllamaProvider
+    azure_openai.py       # AzureOpenAIProvider (retry + cost tracking)
+    bedrock.py            # BedrockProvider (retry + cost tracking)
+    embeddings/
+      sentence_tf.py      # SentenceTransformer (local)
+      openai_embed.py     # Azure OpenAI embeddings
+    perplexity/
+      gpt2.py             # GPT-2 (EN proxy)
+      hf_causal.py        # Any HF causal LM (multilingual)
+    _retry.py             # tenacity backoff for paid API
+    _cost.py              # TRACKER singleton, per-provider call/char accounting
   attacks/
-    s2mia.py        # S2MIA: BLEU + perplexity → XGBoost score
-    budgetleak.py   # BudgetLeak: Tri-Budget + Fuzzy C-Means zero-knowledge clustering
-  defenses.py       # difese text-based: paraphrase, prompt hardening
-  metrics.py        # AUC, TPR@FPR, PPV-con-prior, membership advantage
-  plots.py          # ROC multi-attacco
-  dashboard_helpers.py # logica pura per dashboard (nessun import streamlit, testabile)
-tests/              # suite offline (network-free), NER finto per i test
+    s2mia.py              # S2MIA: BLEU + perplexity (+ optional cosine) → XGBoost score
+    budgetleak.py         # BudgetLeak: Tri-Budget + Fuzzy C-Means zero-knowledge clustering
+  defenses.py             # text-based defenses: paraphrase, prompt hardening
+  metrics.py              # AUC, TPR@FPR, PPV-with-prior, membership advantage
+  plots.py                # multi-attack ROC
+  dashboard_helpers.py    # pure logic for the dashboard (no streamlit import, testable)
+tests/                    # offline suite (network-free), fake NER for tests
 scripts/
-  run_ingestion.py  # ingest reale del corpus (fuori dal repo)
-  run_attack.py     # orchestrazione attacchi (indicizza SOLO membri, salva scores CSV)
-  run_eval.py       # valutazione (AUC/TPR@1%FPR/PPV, disaggregazione impresa vs persona)
+  run_ingestion.py        # real corpus ingest (out of repo)
+  run_attack.py           # attack orchestration (indexes ONLY members, saves scores CSV)
+  run_eval.py             # evaluation (AUC/TPR@1%FPR/PPV, company vs person breakdown)
 dashboard/
-  app.py            # Streamlit UI (5 sezioni: attacchi live, metriche, PII, RAG, ingest)
+  app.py                  # Streamlit UI (5 sections: live attacks, metrics, PII, RAG, ingest)
 ```
 
 ## Setup
 
 ```bash
-# dipendenze
+# dependencies
 uv sync
 
-# modello target locale (pull ~5 GB, su WiFi stabile)
+# local target model (~5 GB pull, use stable WiFi)
 ollama pull llama3.1:8b
 
-# chiavi API (solo se si usano i target commerciali) — mai committare .env
-cp .env.example .env   # poi compilare
+# API keys (only if using paid targets) — never commit .env
+cp .env.example .env   # then fill in
 ```
 
-## Test
+## Selecting providers (v0.2)
 
-Suite completamente offline (nessuna rete, NER e Ollama mockati):
+Provider choice via env or CLI. Default reproduces v0.1-thesis exactly
+(Ollama + MiniLM + GPT-2).
+
+```bash
+# via .env
+LLM_PROVIDER=ollama              # ollama | azure_openai | bedrock
+EMBEDDING_PROVIDER=sentence_tf   # sentence_tf | openai_embed
+PERPLEXITY_PROVIDER=gpt2         # gpt2 | hf_causal
+PERPLEXITY_HF_MODEL=gpt2         # any HF causal LM if hf_causal
+
+# via CLI (overrides env)
+uv run python scripts/run_attack.py --llm azure_openai --embed openai_embed
+```
+
+`Settings.validate()` fails fast if the selected provider requires env vars
+that are missing.
+
+## Tests
+
+Fully offline suite (no network, NER and Ollama mocked):
 
 ```bash
 uv run pytest -q
 ```
 
-## Ingestion del corpus reale
+62 passing, 1 skipped (a backcompat test isolated for a known macOS ARM
+segfault when torch+xgboost+tqdm run together; runnable standalone).
 
-Il corpus vive **fuori dal repo** (in `documenti/`, git-ignored). L'ingest
-pseudonimizza e scrive JSONL in `data/processed/`:
+## Real corpus ingestion
+
+The corpus lives **outside the repo** (in `documenti/`, git-ignored). Ingest
+pseudonymizes and writes JSONL to `data/processed/`:
 
 ```bash
 HF_HUB_DISABLE_XET=1 PYTHONPATH=src uv run python scripts/run_ingestion.py
 ```
 
-## Pipeline operativa
+## End-to-end pipeline
 
-Sequenza end-to-end (richiede Ollama attivo, `ollama serve`):
+Full sequence (requires Ollama running: `ollama serve`):
 
 ```bash
-# 1. ingest del corpus (pseudonimizza → data/processed/reports.jsonl)
+# 1. corpus ingest (pseudonymize → data/processed/reports.jsonl)
 HF_HUB_DISABLE_XET=1 PYTHONPATH=src uv run python scripts/run_ingestion.py
 
-# 2. esegui gli attacchi (indicizza SOLO i membri, salva results/scores_*.csv)
+# 2. run the attacks (indexes ONLY members, saves results/scores_*.csv)
 PYTHONPATH=src uv run python scripts/run_attack.py
 
-# 3. valuta (AUC/TPR@1%FPR/PPV, disaggregazione impresa vs persona, results/summary.csv + roc.png)
+# 3. evaluate (AUC/TPR@1%FPR/PPV, company vs person breakdown,
+#    results/summary.csv + roc.png)
 PYTHONPATH=src uv run python scripts/run_eval.py --prior 0.1
 
-# difese (trade-off security/utility): rieseguire gli attacchi sotto difesa
+# defenses (security/utility trade-off): rerun attacks under defense
 PYTHONPATH=src uv run python scripts/run_attack.py --defense paraphrase
 PYTHONPATH=src uv run python scripts/run_attack.py --defense prompt_hardening
 ```
 
-**Nota sui risultati.** Le difese text-based (paraphrase, prompt hardening)
-riducono il segnale testuale di S2MIA (BLEU/perplexity) ma **non bloccano
-BudgetLeak**, che è un side-channel comportamentale sul generation budget.
-L'analisi disaggregata per `has_person` (impresa vs persona) evidenzia il
-danno differenziale sulla privacy. I valori quantitativi (AUC, TPR, PPV)
-sono prodotti dalla pipeline sopra e riportati in tesi.
+**On results.** Text-based defenses (paraphrase, prompt hardening) reduce the
+textual signal for S2MIA (BLEU/perplexity) but **do not block BudgetLeak**,
+which is a behavioral side-channel on the generation budget. The disaggregated
+analysis by `has_person` (company vs person) highlights differential privacy
+damage. Quantitative values (AUC, TPR, PPV) are produced by the pipeline
+above and reported in the thesis.
 
 ## Dashboard (Streamlit)
 
-Layer di presentazione interattivo per esplorare il PoC. Richiede `uv run streamlit run dashboard/app.py`.
+Interactive presentation layer to explore the PoC. Requires
+`uv run streamlit run dashboard/app.py`.
 
-**Prerequisiti:**
-- `data/processed/reports.jsonl` ingerito (vedi "Ingestion del corpus reale").
-- Ollama attivo (`ollama serve`) per attacchi live ed esplorazione RAG.
+**Prerequisites:**
+- `data/processed/reports.jsonl` ingested (see "Real corpus ingestion").
+- Ollama running (`ollama serve`) for live attacks and RAG exploration.
 
-**Sezioni:**
-1. **Attacchi Live** — S2MIA/BudgetLeak su Ollama in tempo reale (lento, limite configurabile su numero chunk).
-2. **Metriche & Grafici** — visualizza `results/summary.csv` e `roc.png` (da run_eval.py).
-3. **Gate PII** — demo pseudonimizzazione (input utente → output con token; regex-only per velocità).
-4. **Esplora RAG** — query black-box → risposta + chunk ID recuperati.
-5. **Ingest Documenti** — upload PDF/DOCX/MD/TXT → pseudonimizzazione + append a reports.jsonl.
+**Sections:**
+1. **Live Attacks** — S2MIA/BudgetLeak on Ollama in real time (slow;
+   configurable limit on number of chunks).
+2. **Metrics & Charts** — displays `results/summary.csv` and `roc.png`
+   (from `run_eval.py`).
+3. **PII Gate** — pseudonymization demo (user input → output with tokens;
+   regex-only by default for speed, NER opt-in).
+4. **RAG Explorer** — black-box query → answer + retrieved chunk IDs.
+5. **Document Ingest** — upload PDF/DOCX/MD/TXT → pseudonymization + append
+   to `reports.jsonl`.
 
-## Stato
+The sidebar also exposes a **Provider (advanced)** expander to switch LLM /
+embedder / perplexity backends at runtime.
 
-| Componente | Stato |
+## Status
+
+| Component | Status |
 |---|---|
 | Config + scaffold | ✅ |
-| Pseudonimizzazione PII (gate etico) | ✅ — 0 PII residua su ingest reale (5 PDF) |
-| Ingestion PDF | ✅ |
-| Chunking + split membri | ✅ |
+| PII pseudonymization (ethical gate) | ✅ — 0 residual PII on real ingest (5 PDFs) |
+| PDF ingestion | ✅ |
+| Chunking + member split | ✅ |
 | TargetRAG (black-box) | ✅ |
-| Metriche di attacco | ✅ |
-| Attacco S2MIA | ✅ |
-| Attacco BudgetLeak | ✅ |
-| Plot / grafici | ✅ |
-| Orchestrazione end-to-end | ✅ |
-| Difese + trade-off | ✅ |
-| Dashboard Streamlit | ✅ |
+| Attack metrics | ✅ |
+| S2MIA attack | ✅ |
+| BudgetLeak attack | ✅ |
+| Plots / charts | ✅ |
+| End-to-end orchestration | ✅ |
+| Defenses + trade-off | ✅ |
+| Streamlit dashboard | ✅ |
+| **v0.2 pluggable providers** | ✅ — LLM/embedder/PPL swappable |
+| Retry + cost tracking (paid API) | ✅ |
+| Persistent Chroma (opt-in) | ✅ |
 
-## Note
+## Notes
 
-- Documentazione operativa: [`OLLAMA.md`](OLLAMA.md) (setup modello locale),
-  [`DS4_EC2.md`](DS4_EC2.md) (infrastruttura remota opzionale).
-- Il versioning del codice PoC è separato dal Vault della tesi.
+- Operational docs: [`OLLAMA.md`](OLLAMA.md) (local model setup),
+  [`DS4_EC2.md`](DS4_EC2.md) (optional remote infrastructure),
+  [`TODO.md`](TODO.md) (roadmap).
+- PoC code versioning is separate from the thesis Vault.
