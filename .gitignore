@@ -17,8 +17,7 @@ chroma_db/
 *.sqlite3
 data/synthetic/*.jsonl
 data/processed/
-results/*.csv
-results/*.png
+results/
 logs/
 .DS_Store
 
@@ -27,3 +26,6 @@ documenti/
 
 # SDD scratch
 .superpowers/
+
+# Documentazione privata (spiegazioni implementazione, mai su git)
+docs_private/
