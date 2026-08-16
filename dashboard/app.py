@@ -280,7 +280,7 @@ elif section == "Gate PII":
 
     **Pipeline full** (ingestion reale):
     1. **Regex** → CF, P.IVA, IBAN, email, telefono, indirizzi, numeri lunghi (≥9 cifre).
-    2. **NER italiano** (`rizzo-pii-0.3B`) → nomi persona, luoghi, org, date, numeri ID.
+    2. **NER italiano** (default: `rizzoaiacademy/rizzo-pii-0.3B` via HuggingFace) → nomi persona, luoghi, org, date, numeri ID. Modello configurabile via env `MIARAG_NER_MODEL`.
     3. **Backstop fail-closed**: qualunque sequenza ≥9 cifre residua → token `NUM_<hash8>`.
 
     Ogni entità PII → token deterministico `<TIPO>_<hash8>` (stesso input = stesso token, per preservare co-occorrenze senza esporre PII).
@@ -293,14 +293,14 @@ elif section == "Gate PII":
     user_text = st.text_area("Inserisci testo con PII", height=150, value="Amministratore CF RSSMRA80A01F205X presente. P.IVA 01234567890. Il signor Massimo d'annunzio nato nel 1985 a Cosenza")
 
     enable_ner = st.checkbox("Abilita NER (lento, ~5-10s)", value=False)
-    st.caption("⚠️ NER rizzo-pii-0.3B rileva nomi persona, luoghi, org — ma richiede download modello (~1.2 GB) e inferenza transformer.")
+    st.caption("⚠️ Il NER italiano (default: rizzo-pii-0.3B via HF, ~1.2 GB) rileva nomi persona, luoghi, org — richiede download modello e inferenza transformer.")
 
     if st.button("Pseudonimizza"):
         if user_text.strip():
             if enable_ner:
-                with st.spinner("Caricamento NER rizzo-pii-0.3B..."):
-                    from miarag.pseudonymize import RizzoNerDetector
-                    ner = RizzoNerDetector()
+                with st.spinner("Caricamento modello NER..."):
+                    from miarag.pseudonymize import ItalianPIINerDetector
+                    ner = ItalianPIINerDetector()
                     pseudo = pii_demo(user_text, ner=ner)
             else:
                 pseudo = pii_demo(user_text, ner=None)
@@ -357,7 +357,7 @@ elif section == "Ingest Documenti":
     1. **Carica** file da UI.
     2. **Estrai testo grezzo** (pypdf, python-docx, stdlib).
     3. **Normalizza** (unicode space → ASCII, rimuovi nbsp).
-    4. **Pseudonimizza** (regex + NER `rizzo-pii-0.3B` → token `<TIPO>_<hash8>` + backstop ≥9 cifre).
+    4. **Pseudonimizza** (regex + NER italiano IT-legal → token `<TIPO>_<hash8>` + backstop ≥9 cifre).
     5. **Append** a `data/processed/reports.jsonl` (4 campi: doc_id, company, text, has_person).
 
     **NB**: dopo l'ingest, il RAG deve essere **reindicizzato** (riavvia dashboard) perché la cache `@st.cache_resource` tiene il vecchio corpus. Per test produttivi, rigenera il full-run con `run_ingestion.py` (processa l'intero `documenti/` batch).

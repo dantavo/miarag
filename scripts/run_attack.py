@@ -52,28 +52,39 @@ def main():
     s = get_settings()
     s.validate()   # fail-fast su chiavi mancanti
 
+    print(f"[1/6] building llm={s.llm_provider}...", flush=True)
     llm = build_llm(s)
+    print(f"[2/6] building embedder={s.embedding_provider}...", flush=True)
     embedder = build_embedder(s)
+    print(f"[3/6] building ppl={s.perplexity_provider}...", flush=True)
     ppl = build_perplexity(s)
+    print(f"[4/6] constructing TargetRAG (top_k={s.top_k})...", flush=True)
     rag = TargetRAG(llm=llm, embedder=embedder, ppl=ppl, top_k=s.top_k)
 
-    print(f"provider: llm={llm.name} embed={embedder.name} ppl={ppl.name}")
+    print(f"provider: llm={llm.name} embed={embedder.name} ppl={ppl.name}", flush=True)
 
     # Apply defense wrapper (NOTE: text-based defenses knock down S2MIA BLEU/perplexity signal
     # but do NOT stop BudgetLeak, a behavioral side-channel — key finding of the thesis)
     rag = apply_defense(rag, args.defense)
 
+    print(f"[5/6] loading reports + chunking + indexing members...", flush=True)
     members, non_members = build_pipeline(s.data_dir / "processed" / "reports.jsonl", rag)
     targets = members + non_members
+    print(f"       corpus: {len(members)} members + {len(non_members)} non-members = {len(targets)} total", flush=True)
 
     # Filename logic: plain name for --defense none (keeps run_eval.py contract),
     # suffix for non-none defenses
     suffix = "" if args.defense == "none" else f"_{args.defense}"
 
+    print(f"[6/6] running attacks (defense={args.defense})...", flush=True)
+    import time as _time
     for name, fn in [("s2mia", s2mia_scores), ("budgetleak", budgetleak_scores), ("rag_mia", rag_mia_scores)]:
+        t0 = _time.time()
+        print(f"       ▶ {name} starting on {len(targets)} chunks...", flush=True)
         scores, labels = fn(rag, targets)
         _save(s.results_dir / f"scores_{name}{suffix}.csv", targets, scores, labels)
-        print(f"{name}: saved {len(scores)} scores")
+        dt = _time.time() - t0
+        print(f"       ✓ {name}: saved {len(scores)} scores ({dt:.1f}s, {dt/len(targets):.2f}s/chunk)", flush=True)
 
 if __name__ == "__main__":
     main()

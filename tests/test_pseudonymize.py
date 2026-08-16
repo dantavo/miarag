@@ -24,7 +24,7 @@ def test_token_stable_across_calls():
     assert token_for("PER", "Mario Rossi") == token_for("PER", "Mario Rossi")
 
 class _FakeNer:
-    """Detector fittizio: marca 'Mario Rossi' come PERSON (real rizzo-pii label), senza caricare modelli."""
+    """Detector fittizio: marca 'Mario Rossi' come PERSON (canonical NER label mapping), senza caricare modelli."""
     def detect(self, text):
         spans = []
         needle = "Mario Rossi"
@@ -48,7 +48,7 @@ def test_regex_wins_on_overlap():
 
 def test_unmapped_label_logged(caplog):
     """Carry-over from Task 1: unmapped entity_group labels must be logged, not silently dropped."""
-    from miarag.pseudonymize import RizzoNerDetector
+    from miarag.pseudonymize import ItalianPIINerDetector
     import logging
 
     # Mock pipeline that returns an unknown label
@@ -56,7 +56,7 @@ def test_unmapped_label_logged(caplog):
         def __call__(self, text):
             return [{"entity_group": "UNKNOWN_ORG", "start": 0, "end": 4, "score": 0.99}]
 
-    detector = RizzoNerDetector()
+    detector = ItalianPIINerDetector()
     detector._pipe = _FakePipeline()  # bypass lazy-load
 
     with caplog.at_level(logging.WARNING, logger="miarag.pseudonymize"):
@@ -74,14 +74,14 @@ def test_unmapped_label_logged(caplog):
     assert "UNKNOWN_ORG" not in caplog.text  # no duplicate warning
 
 class _FakeRealLabels:
-    """Fake NER that mimics RizzoNerDetector mapping behavior.
+    """Fake NER that mimics ItalianPIINerDetector mapping behavior.
     Returns mapped kind strings (PERSON, EMAIL, etc.) that pseudonymize_text expects.
-    For unmapped labels (ORG, CITY, etc.), they would be filtered out by RizzoNerDetector.detect(),
+    For unmapped labels (ORG, CITY, etc.), they would be filtered out by ItalianPIINerDetector.detect(),
     so this fake doesn't return them at all — simulating the detector's behavior.
     """
     def detect(self, text):
         spans = []
-        # Pseudonymize targets — return the MAPPED kind (what RizzoNerDetector would return)
+        # Pseudonymize targets — return the MAPPED kind (what ItalianPIINerDetector would return)
         if "mario.rossi@example.it" in text:
             i = text.find("mario.rossi@example.it")
             spans.append((i, i + 22, "EMAIL"))
@@ -101,7 +101,7 @@ class _FakeRealLabels:
             i = text.find("20100")
             spans.append((i, i + 5, "ZIP"))
         # Keep targets (ORG, CITY, DATE, AMOUNT) are NOT returned here —
-        # RizzoNerDetector filters them out since they're not in _LABEL_MAP
+        # ItalianPIINerDetector filters them out since they're not in _LABEL_MAP
         return spans
 
 def test_real_labels_pseudonymize_identifiers():
@@ -123,29 +123,30 @@ def test_real_labels_pseudonymize_identifiers():
     assert "ZIP_" in out
 
 def test_real_labels_keep_content():
-    """Content labels (ORG, CITY, DATE, AMOUNT) are NOT pseudonymized."""
+    """Content labels (CITY, DATE, AMOUNT) are NOT pseudonymized.
+    Note: ORG is now mapped to COMPANY (v0.2 fix — company names ARE direct
+    identifiers per GDPR Art. 4(1)). See test_org_pseudonymized_as_company."""
     t = "QUANTYCA S.P.A. Milano 12/03/1980 500000 euro"
     out = pseudonymize_text(t, ner=_FakeRealLabels())
     # These must remain intact
-    assert "QUANTYCA S.P.A." in out
+    assert "QUANTYCA S.P.A." in out    # _FakeRealLabels doesn't return ORG span
     assert "Milano" in out
     assert "12/03/1980" in out
     assert "500000" in out
     # No tokens created for them
-    assert "ORG_" not in out
     assert "CITY_" not in out
     assert "DATE_" not in out
     assert "AMOUNT_" not in out
 
 def test_expected_unmapped_labels_not_logged(caplog):
-    """ORG, CITY, DATE, AMOUNT, AGE, PROVINCE are expected unmapped — no warning."""
-    from miarag.pseudonymize import RizzoNerDetector
+    """CITY, DATE, AMOUNT, AGE, PROVINCE are expected unmapped — no warning.
+    Note: ORG is intentionally REMOVED from this list — v0.2 maps ORG→COMPANY."""
+    from miarag.pseudonymize import ItalianPIINerDetector
     import logging
 
     class _FakePipeline:
         def __call__(self, text):
             return [
-                {"entity_group": "ORG", "start": 0, "end": 4, "score": 0.99},
                 {"entity_group": "CITY", "start": 5, "end": 10, "score": 0.99},
                 {"entity_group": "DATE", "start": 11, "end": 15, "score": 0.99},
                 {"entity_group": "AMOUNT", "start": 16, "end": 20, "score": 0.99},
@@ -153,7 +154,7 @@ def test_expected_unmapped_labels_not_logged(caplog):
                 {"entity_group": "PROVINCE", "start": 24, "end": 26, "score": 0.99},
             ]
 
-    detector = RizzoNerDetector()
+    detector = ItalianPIINerDetector()
     detector._pipe = _FakePipeline()
 
     with caplog.at_level(logging.WARNING, logger="miarag.pseudonymize"):
@@ -162,23 +163,77 @@ def test_expected_unmapped_labels_not_logged(caplog):
     # All are dropped (expected unmapped)
     assert spans == []
     # No warning logged for expected labels
-    assert "ORG" not in caplog.text
     assert "CITY" not in caplog.text
     assert "DATE" not in caplog.text
     assert "AMOUNT" not in caplog.text
     assert "AGE" not in caplog.text
     assert "PROVINCE" not in caplog.text
 
+
+def test_org_pseudonymized_as_company():
+    """ORG label from NER → COMPANY token. Enterprise names are direct PII (GDPR)."""
+    from miarag.pseudonymize import ItalianPIINerDetector
+
+    class _FakePipeline:
+        def __call__(self, text):
+            # Simulate NER detecting a company name as ORG
+            i = text.find("Acme")
+            if i >= 0:
+                return [{"entity_group": "ORG", "start": i, "end": i + 4, "score": 0.99}]
+            return []
+
+    detector = ItalianPIINerDetector()
+    detector._pipe = _FakePipeline()
+
+    spans = detector.detect("Il gruppo Acme opera in Italia")
+    assert spans == [(10, 14, "COMPANY")]
+
+    # End-to-end via pseudonymize_text
+    out = pseudonymize_text("Il gruppo Acme opera in Italia", ner=detector)
+    assert "Acme" not in out
+    assert "COMPANY_" in out
+
+
+def test_company_regex_from_env(monkeypatch):
+    """COMPANY regex is built from env MIARAG_COMPANY_NAMES (no hard-coded brand).
+    Fail-safe if NER misses a company name."""
+    monkeypatch.setenv("MIARAG_COMPANY_NAMES", "Acme Corp,Acme Corp S.p.A.,acme.com")
+    variants = [
+        "Acme Corp",
+        "Acme Corp S.p.A.",
+        "acme.com",
+    ]
+    for v in variants:
+        out = pseudonymize_text(f"Il testo cita {v} come fornitore.")
+        assert v not in out, f"company variant leaked: {v} in {out!r}"
+        assert "COMPANY_" in out
+
+
+def test_company_regex_absent_when_env_unset(monkeypatch):
+    """No env → no hard-coded company detection (relies on NER only)."""
+    monkeypatch.delenv("MIARAG_COMPANY_NAMES", raising=False)
+    out = pseudonymize_text("Il testo cita Acme Corp come fornitore.")
+    # Without env config and without NER, the company name is NOT pseudonymized
+    # by regex (only CF/PIVA/REA/long-digits are). This is expected: brand names
+    # are runtime config, not source constants.
+    assert "Acme Corp" in out
+
+
+def test_rizzo_ner_detector_backcompat_alias():
+    """RizzoNerDetector alias to ItalianPIINerDetector (v0.2 backcompat)."""
+    from miarag.pseudonymize import RizzoNerDetector, ItalianPIINerDetector
+    assert RizzoNerDetector is ItalianPIINerDetector
+
 def test_genuinely_unknown_label_still_warns(caplog):
     """A truly unknown label (not in map, not expected) still triggers warning."""
-    from miarag.pseudonymize import RizzoNerDetector
+    from miarag.pseudonymize import ItalianPIINerDetector
     import logging
 
     class _FakePipeline:
         def __call__(self, text):
             return [{"entity_group": "WEIRDLABEL", "start": 0, "end": 4, "score": 0.99}]
 
-    detector = RizzoNerDetector()
+    detector = ItalianPIINerDetector()
     detector._pipe = _FakePipeline()
 
     with caplog.at_level(logging.WARNING, logger="miarag.pseudonymize"):
@@ -188,7 +243,7 @@ def test_genuinely_unknown_label_still_warns(caplog):
     assert "Unmapped entity_group from NER model: 'WEIRDLABEL'" in caplog.text
 
 class _OverlapNer:
-    """Fake NER returning overlapping spans like the real rizzo-pii model."""
+    """Fake NER returning overlapping spans like a real Italian NER model."""
     def detect(self, text):
         spans = []
         # Repro case: '1.045    13690054749    P.IVA 01234567890 tel 3391234567'
@@ -248,14 +303,14 @@ def test_nested_spurious_buildingnum_dropped():
 
 def test_creditcard_and_catasto_mapped():
     """CREDITCARDNUMBER e CATASTO (scoperti sui PDF reali) devono essere pseudonimizzati, non skippati."""
-    from miarag.pseudonymize import RizzoNerDetector
+    from miarag.pseudonymize import ItalianPIINerDetector
     class _FakePipeline:
         def __call__(self, text):
             return [
                 {"entity_group": "CREDITCARDNUMBER", "start": 0, "end": 4, "score": 0.99},
                 {"entity_group": "CATASTO", "start": 5, "end": 9, "score": 0.99},
             ]
-    det = RizzoNerDetector()
+    det = ItalianPIINerDetector()
     det._pipe = _FakePipeline()
     spans = det.detect("1234 5678")
     kinds = sorted(k for (_, _, k) in spans)

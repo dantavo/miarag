@@ -46,8 +46,9 @@ embedder, and perplexity scorer without touching attack code.
 - **Perplexity:** `gpt2` (local proxy, EN) or `hf_causal` (any HF causal LM,
   useful for Italian corpora via e.g. Minerva). Ollama v0.32.7 does not
   expose per-token logprobs via `/api/generate`, so a proxy LM is used.
-- **PII:** regex (Italian tax codes, VAT, REA) + Italian NER `rizzo-pii-0.3B`
-  (`transformers`).
+- **PII:** regex (Italian tax codes, VAT, REA) + Italian NER (HuggingFace
+  token-classification, default `rizzoaiacademy/rizzo-pii-0.3B`, configurable
+  via env `MIARAG_NER_MODEL`).
 
 ## Structure
 

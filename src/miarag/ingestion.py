@@ -5,7 +5,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from pypdf import PdfReader
 from docx import Document
-from miarag.pseudonymize import PII_PATTERNS, pseudonymize_text, NerDetector, RizzoNerDetector
+from miarag.pseudonymize import PII_PATTERNS, pseudonymize_text, NerDetector, ItalianPIINerDetector
 
 @dataclass
 class ReportDoc:
@@ -40,9 +40,9 @@ def load_any(path: Path) -> str:
 
 def ingest_file(path: Path, out_path: Path, ner: NerDetector | None = None, append: bool = True) -> ReportDoc:
     """Ingerisce UN file (pdf/docx/md/txt): carica, pseudonimizza, appende un ReportDoc a out_path (JSONL).
-    ner=None → RizzoNerDetector reale (produzione). append=False sovrascrive out_path."""
+    ner=None → ItalianPIINerDetector reale (produzione). append=False sovrascrive out_path."""
     if ner is None:
-        ner = RizzoNerDetector()
+        ner = ItalianPIINerDetector()
     raw = load_any(path)
     doc = parse_report_text(raw, doc_id=path.stem, ner=ner)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +69,7 @@ def parse_report_text(raw: str, doc_id: str, ner: NerDetector | None = None) -> 
 
 def ingest_dir(corpus_dir: Path, out_path: Path, ner: NerDetector | None = None) -> list[ReportDoc]:
     if ner is None:
-        ner = RizzoNerDetector()          # produzione: NER italiano attivo
+        ner = ItalianPIINerDetector()          # produzione: NER italiano attivo
     docs = []
     files = sorted(p for p in corpus_dir.iterdir() if p.suffix.lower() in _LOADERS)
     for src in files:

@@ -19,6 +19,7 @@ data/synthetic/*.jsonl
 data/processed/
 results/*.csv
 results/*.png
+logs/
 .DS_Store
 
 # Corpus reale — PII vera, MAI su GitHub (report business-information sorgente)

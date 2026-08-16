@@ -1,6 +1,7 @@
 # src/miarag/pseudonymize.py
 import hashlib
 import logging
+import os
 import re
 from typing import Protocol
 
@@ -14,6 +15,29 @@ PII_PATTERNS = {
 
 _LONG_DIGITS = re.compile(r"\d{9,}")
 
+
+def _company_pattern() -> re.Pattern | None:
+    """Build a COMPANY regex from env `MIARAG_COMPANY_NAMES` (comma-separated).
+
+    No company name is hard-coded in source: the caller provides the list at
+    runtime (e.g. in a git-ignored .env). Empty/unset → returns None and company
+    detection relies solely on the NER ORG→COMPANY mapping.
+
+    Example:
+        MIARAG_COMPANY_NAMES="Acme Corp,Acme Corp S.p.A.,acme.com"
+    """
+    raw = os.environ.get("MIARAG_COMPANY_NAMES", "").strip()
+    if not raw:
+        return None
+    names = [n.strip() for n in raw.split(",") if n.strip()]
+    if not names:
+        return None
+    # Longer names first so the most specific form wins on overlap.
+    names.sort(key=len, reverse=True)
+    alternation = "|".join(re.escape(n) for n in names)
+    return re.compile(r"\b(" + alternation + r")\b", re.IGNORECASE)
+
+
 def token_for(kind: str, value: str, seed: int = 42) -> str:
     h = hashlib.sha256(f"{seed}:{kind}:{value}".encode()).hexdigest()[:8]
     return f"{kind}_{h}"
@@ -23,6 +47,11 @@ def regex_spans(text: str) -> list[tuple[int, int, str]]:
     for kind, pat in PII_PATTERNS.items():
         for m in pat.finditer(text):
             spans.append((m.start(), m.end(), kind))
+    # Company names from env-configured list (fail-safe if NER misses them).
+    company_pat = _company_pattern()
+    if company_pat is not None:
+        for m in company_pat.finditer(text):
+            spans.append((m.start(), m.end(), "COMPANY"))
     return spans
 
 class NerDetector(Protocol):
@@ -86,7 +115,7 @@ def pseudonymize_text(text: str, seed: int = 42, ner: NerDetector | None = None)
         out.append(text[prev:s])
 
         # Preserva whitespace leading/trailing: se span inizia/finisce con spazio,
-        # includi spazio prima/dopo token (NER rizzo spesso cattura whitespace)
+        # includi spazio prima/dopo token (i modelli NER catturano spesso whitespace)
         span_text = text[s:e]
         leading_ws = ""
         trailing_ws = ""
@@ -109,8 +138,18 @@ def pseudonymize_text(text: str, seed: int = 42, ner: NerDetector | None = None)
     result = _LONG_DIGITS.sub(lambda m: token_for("NUM", m.group(), seed), result)
     return result
 
-class RizzoNerDetector:
-    """NER italiano rizzo-pii-0.3B via transformers. Lazy-load; maps real rizzo-pii labels."""
+class ItalianPIINerDetector:
+    """Italian PII NER detector via HuggingFace token-classification pipeline.
+
+    Backend: any `AutoModelForTokenClassification`-compatible model. Default is
+    `rizzoaiacademy/rizzo-pii-0.3B` (mmBERT/ModernBERT, 0.3B params, ~0.5 GB RAM,
+    22 categorie PII IT-legal incluso CF/PIVA/CATASTO). Configurabile via env
+    `MIARAG_NER_MODEL` o costruttore `model_id=...`.
+
+    Label mapping: adatta le label emesse dal modello alle chiavi interne
+    (PERSON, COMPANY, IBAN, ecc.) usate da `pseudonymize_text`. Le label non
+    mappate vengono ignorate (con warning al primo incontro).
+    """
     _LABEL_MAP = {
         "FULLNAME": "PERSON",
         "CF": "CF",
@@ -126,11 +165,20 @@ class RizzoNerDetector:
         "TARGA": "PLATE",
         "CREDITCARDNUMBER": "CC",
         "CATASTO": "CATASTO",
+        # Company/organization names as PII: business identifiers in enterprise
+        # documents. Direct identifier of a legal entity → GDPR Art. 4(1).
+        "ORG": "COMPANY",
     }
-    _EXPECTED_UNMAPPED = {"ORG", "CITY", "PROVINCE", "DATE", "AMOUNT", "AGE", "TIME"}
+    # Labels intentionally kept in cleartext (metadata, non direct identifiers).
+    _EXPECTED_UNMAPPED = {"CITY", "PROVINCE", "DATE", "AMOUNT", "AGE", "TIME"}
 
-    def __init__(self, model_id: str = "rizzoaiacademy/rizzo-pii-0.3B"):
-        self._model_id = model_id
+    _DEFAULT_MODEL_ID = "rizzoaiacademy/rizzo-pii-0.3B"
+
+    def __init__(self, model_id: str | None = None):
+        import os
+        self._model_id = model_id or os.environ.get(
+            "MIARAG_NER_MODEL", self._DEFAULT_MODEL_ID
+        )
         self._pipe = None
         self._warned_labels = set()  # track unmapped labels already warned
 
@@ -149,8 +197,12 @@ class RizzoNerDetector:
             if kind:
                 spans.append((int(ent["start"]), int(ent["end"]), kind))
             elif grp and grp not in self._EXPECTED_UNMAPPED and grp not in self._warned_labels:
-                # Defensive: log unmapped labels once to surface silent drops
-                # (expected keep-labels like ORG/CITY/DATE are not logged)
+                # Defensive: log unmapped labels once to surface silent drops.
                 logger.warning(f"Unmapped entity_group from NER model: '{grp}' (span skipped)")
                 self._warned_labels.add(grp)
         return spans
+
+
+# Backward-compat alias: some tests and older docs reference RizzoNerDetector.
+# Nuovo codice: usare ItalianPIINerDetector.
+RizzoNerDetector = ItalianPIINerDetector
