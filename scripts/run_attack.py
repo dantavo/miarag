@@ -4,7 +4,7 @@ import csv, json
 from pathlib import Path
 from miarag.config import get_settings
 from miarag.ingestion import ReportDoc
-from miarag.corpus import chunk_documents, split_members, Chunk
+from miarag.corpus import chunk_documents, split_members, split_members_by_doc, Chunk
 from miarag.rag import TargetRAG
 from miarag.providers import build_llm, build_embedder, build_perplexity
 from miarag.attacks.s2mia import s2mia_scores
@@ -19,9 +19,15 @@ def _load_reports(path: Path) -> list[ReportDoc]:
         docs.append(ReportDoc(**d))
     return docs
 
-def build_pipeline(reports_jsonl: Path, rag) -> tuple[list[Chunk], list[Chunk]]:
+def build_pipeline(reports_jsonl: Path, rag, split: str = "chunk") -> tuple[list[Chunk], list[Chunk]]:
     docs = _load_reports(reports_jsonl)
-    members, non_members = split_members(chunk_documents(docs), 0.5, 42)
+    chunks = chunk_documents(docs)
+    # split="doc": document-level membership (literature-standard, no sibling-chunk
+    # leakage). split="chunk": legacy chunk-level shuffle (v0.1-thesis, Aug-12 numbers).
+    if split == "doc":
+        members, non_members = split_members_by_doc(chunks, 0.5, 42)
+    else:
+        members, non_members = split_members(chunks, 0.5, 42)
     rag.index(members)          # SOLO i membri sono indicizzati
     return members, non_members
 
@@ -41,6 +47,9 @@ def main():
                         help="Override EMBEDDING_PROVIDER env.")
     parser.add_argument("--ppl", choices=["gpt2", "hf_causal"], default=None,
                         help="Override PERPLEXITY_PROVIDER env.")
+    parser.add_argument("--split", choices=["chunk", "doc"], default="chunk",
+                        help="Membership split: 'chunk' (legacy, v0.1-thesis) or 'doc' "
+                             "(document-level, no sibling-chunk leakage — recommended).")
     args = parser.parse_args()
 
     # CLI override → env → default. get_settings() rilegge env.
@@ -67,8 +76,8 @@ def main():
     # but do NOT stop BudgetLeak, a behavioral side-channel — key finding of the thesis)
     rag = apply_defense(rag, args.defense)
 
-    print(f"[5/6] loading reports + chunking + indexing members...", flush=True)
-    members, non_members = build_pipeline(s.data_dir / "processed" / "reports.jsonl", rag)
+    print(f"[5/6] loading reports + chunking + indexing members (split={args.split})...", flush=True)
+    members, non_members = build_pipeline(s.data_dir / "processed" / "reports.jsonl", rag, split=args.split)
     targets = members + non_members
     print(f"       corpus: {len(members)} members + {len(non_members)} non-members = {len(targets)} total", flush=True)
 
