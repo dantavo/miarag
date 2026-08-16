@@ -61,10 +61,16 @@ def parse_report_text(raw: str, doc_id: str, ner: NerDetector | None = None) -> 
     company = next((ln.strip() for ln in raw.splitlines() if ln.strip()), doc_id)  # dal raw
     # Normalizza spazi unicode (nbsp \xa0 e affini): senza questo i numeri delle
     # tabelle di bilancio restano spezzati e sfuggono a regex/NER → leak PII.
-    clean = raw.replace("\xa0", " ").replace(" ", " ").replace(" ", " ")
+    clean = raw.replace("\xa0", " ").replace(" ", " ").replace(" ", " ")
     clean = re.sub(r"[ \t]+", " ", clean)
     clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
     clean = pseudonymize_text(clean, ner=ner)
+    # Sanitize doc_id and company too: they may carry organization names (e.g.
+    # from the source filename or the first document line) that would otherwise
+    # leak into chunk_ids (chunk_id = f"{doc_id}::{idx}") and scores CSVs.
+    # Regex-only (no NER) is enough here and keeps it fast.
+    doc_id = pseudonymize_text(doc_id, ner=None)
+    company = pseudonymize_text(company, ner=ner)
     return ReportDoc(doc_id=doc_id, company=company, text=clean, has_person=has_person)
 
 def ingest_dir(corpus_dir: Path, out_path: Path, ner: NerDetector | None = None) -> list[ReportDoc]:

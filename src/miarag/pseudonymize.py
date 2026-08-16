@@ -23,6 +23,11 @@ def _company_pattern() -> re.Pattern | None:
     runtime (e.g. in a git-ignored .env). Empty/unset → returns None and company
     detection relies solely on the NER ORG→COMPANY mapping.
 
+    Matching is FAIL-CLOSED (no word-boundary anchors): a configured name is
+    replaced even when glued to other characters (e.g. "Name_v2", "Name.com",
+    "NameSpA"). This prioritizes the privacy guarantee over precision; since the
+    list is user-provided, occasional over-matching is an accepted trade-off.
+
     Example:
         MIARAG_COMPANY_NAMES="Acme Corp,Acme Corp S.p.A.,acme.com"
     """
@@ -35,7 +40,8 @@ def _company_pattern() -> re.Pattern | None:
     # Longer names first so the most specific form wins on overlap.
     names.sort(key=len, reverse=True)
     alternation = "|".join(re.escape(n) for n in names)
-    return re.compile(r"\b(" + alternation + r")\b", re.IGNORECASE)
+    # No \b anchors: fail-closed substring match, case-insensitive.
+    return re.compile("(" + alternation + ")", re.IGNORECASE)
 
 
 def token_for(kind: str, value: str, seed: int = 42) -> str:
