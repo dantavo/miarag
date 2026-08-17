@@ -94,13 +94,13 @@ def main():
     import time as _time
 
     if args.graybox:
-        # Gray-box: usa logprob del target (solo S2MIA e RAG-MIA; BudgetLeak è
-        # comportamentale, invariato). Suffisso _graybox (+ eventuale difesa).
+        # Gray-box: usa logprob del target. Solo S2MIA e RAG-MIA hanno variante
+        # gray-box; BudgetLeak è comportamentale (nessun logprob) e identico al
+        # black-box → SALTATO qui per non duplicarlo. Suffisso _graybox (+ difesa).
         gb_suffix = "_graybox" + suffix
         attack_plan = [
             ("s2mia", s2mia_scores_native_ppl, gb_suffix),
             ("rag_mia", rag_mia_graybox_scores, gb_suffix),
-            ("budgetleak", budgetleak_scores, suffix),
         ]
     else:
         attack_plan = [
