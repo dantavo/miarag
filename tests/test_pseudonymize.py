@@ -219,6 +219,33 @@ def test_company_regex_absent_when_env_unset(monkeypatch):
     assert "Acme Corp" in out
 
 
+def test_credentials_redacted_label_kept():
+    """Credenziali di sistema: il valore è redige, l'etichetta resta."""
+    out = pseudonymize_text("user: ftpsuper - pssw: super.test.1", ner=None)
+    assert "ftpsuper" not in out
+    assert "super.test.1" not in out
+    assert "user:" in out and "pssw:" in out    # etichette preservate
+    assert out.count("SECRET_") == 2
+
+
+def test_credentials_various_keys():
+    for text, secret in [
+        ("password=Secret123!", "Secret123!"),
+        ("token: abc123def456", "abc123def456"),
+        ("API_KEY = sk-abcdef", "sk-abcdef"),
+        ("utente: mrossi", "mrossi"),
+    ]:
+        out = pseudonymize_text(text, ner=None)
+        assert secret not in out, f"secret leaked: {secret} in {out!r}"
+        assert "SECRET_" in out
+
+
+def test_credentials_no_false_positive_without_value():
+    """'the user must login' non ha chiave:valore → nessuna redazione."""
+    out = pseudonymize_text("the user must login to the system", ner=None)
+    assert out == "the user must login to the system"
+
+
 def test_rizzo_ner_detector_backcompat_alias():
     """RizzoNerDetector alias to ItalianPIINerDetector (v0.2 backcompat)."""
     from miarag.pseudonymize import RizzoNerDetector, ItalianPIINerDetector

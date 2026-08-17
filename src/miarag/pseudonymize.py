@@ -48,6 +48,27 @@ def token_for(kind: str, value: str, seed: int = 42) -> str:
     h = hashlib.sha256(f"{seed}:{kind}:{value}".encode()).hexdigest()[:8]
     return f"{kind}_{h}"
 
+
+# Credenziali di sistema in chiaro (frequenti nei wiki tecnici): redige il VALORE
+# dopo una chiave tipo user/password/token, mantenendo l'etichetta.
+# Es: "pssw: super.test.1" → "pssw: SECRET_<hash>".  Fail-closed: \S+ generoso.
+_CREDENTIAL_RE = re.compile(
+    r"(?i)\b(?:user(?:name)?|utente|passw(?:ord)?|pssw|pwd|pass|token|"
+    r"api[_-]?key|apikey|secret|credentials?)\b\s*[:=]\s*(\S+)"
+)
+
+
+def _credential_spans(text: str) -> list[tuple[int, int, str]]:
+    """Span del VALORE credenziale (group 1) → kind SECRET. L'etichetta resta."""
+    spans = []
+    for m in _CREDENTIAL_RE.finditer(text):
+        val = m.group(1)
+        # Evita di redigere valori già tokenizzati o placeholder ovvi.
+        if val and not val.startswith(("<", "{", "[")):
+            spans.append((m.start(1), m.end(1), "SECRET"))
+    return spans
+
+
 def regex_spans(text: str) -> list[tuple[int, int, str]]:
     spans = []
     for kind, pat in PII_PATTERNS.items():
@@ -58,6 +79,8 @@ def regex_spans(text: str) -> list[tuple[int, int, str]]:
     if company_pat is not None:
         for m in company_pat.finditer(text):
             spans.append((m.start(), m.end(), "COMPANY"))
+    # System credentials (user:/pssw:/token: …) → redige il valore.
+    spans.extend(_credential_spans(text))
     return spans
 
 class NerDetector(Protocol):
