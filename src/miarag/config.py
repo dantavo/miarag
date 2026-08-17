@@ -60,4 +60,20 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    return Settings()
+    """Legge le variabili d'ambiente AL MOMENTO DELLA CHIAMATA.
+
+    NB: i default dei campi della dataclass sono valutati all'import del modulo;
+    quindi impostare os.environ dopo l'import NON li aggiornerebbe. Qui passiamo
+    esplicitamente i valori correnti così che override runtime (es. flag CLI
+    --llm che setta LLM_PROVIDER prima di get_settings) funzionino davvero.
+    """
+    return Settings(
+        llm_provider=os.getenv("LLM_PROVIDER", "ollama"),
+        embedding_provider=os.getenv("EMBEDDING_PROVIDER", "sentence_tf"),
+        perplexity_provider=os.getenv("PERPLEXITY_PROVIDER", "gpt2"),
+        ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        ollama_model=os.getenv("OLLAMA_TARGET_MODEL", "llama3.1:8b"),
+        embedding_model=os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
+        top_k=int(os.getenv("TOP_K", "4")),
+        seed=int(os.getenv("SEED", "42")),
+    )
