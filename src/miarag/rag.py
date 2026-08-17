@@ -94,6 +94,27 @@ class TargetRAG:
         answer = self._generate(_PROMPT.format(context=ctx, q=question), max_tokens)
         return RAGResponse(answer=answer, retrieved_ids=ids, perplexity=None)
 
+    def query_with_logprobs(self, question: str, max_tokens: int = 256) -> dict:
+        """Come query() ma restituisce anche i logprob della generazione.
+        Richiede un LLM con generate_with_logprobs (es. AzureOpenAIProvider).
+
+        Ritorna: {"answer", "retrieved_ids", "token_logprobs", "first_top"}.
+        Solleva AttributeError se il provider non supporta i logprob (es. Ollama).
+        """
+        if self._llm is None or not hasattr(self._llm, "generate_with_logprobs"):
+            raise AttributeError("Il provider LLM corrente non espone logprobs")
+        q_emb = self._embed_query(question)
+        res = self._coll.query(query_embeddings=[q_emb], n_results=self.top_k)
+        ids = res["ids"][0]
+        ctx = "\n".join(res["documents"][0])
+        out = self._llm.generate_with_logprobs(_PROMPT.format(context=ctx, q=question), max_tokens)
+        return {
+            "answer": out["text"],
+            "retrieved_ids": ids,
+            "token_logprobs": out["token_logprobs"],
+            "first_top": out["first_top"],
+        }
+
     # ─── Perplexity (delegato a PerplexityScorer iniettato o lazy GPT-2) ──
     def perplexity_of(self, text: str) -> float:
         if self._ppl is None:

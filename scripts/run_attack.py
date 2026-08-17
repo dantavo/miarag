@@ -7,9 +7,9 @@ from miarag.ingestion import ReportDoc
 from miarag.corpus import chunk_documents, split_members, split_members_by_doc, Chunk
 from miarag.rag import TargetRAG
 from miarag.providers import build_llm, build_embedder, build_perplexity
-from miarag.attacks.s2mia import s2mia_scores
+from miarag.attacks.s2mia import s2mia_scores, s2mia_scores_native_ppl
 from miarag.attacks.budgetleak import budgetleak_scores
-from miarag.attacks.rag_mia import rag_mia_scores
+from miarag.attacks.rag_mia import rag_mia_scores, rag_mia_graybox_scores
 from miarag.defenses import apply_defense
 
 def _load_reports(path: Path) -> list[ReportDoc]:
@@ -50,6 +50,11 @@ def main():
     parser.add_argument("--split", choices=["chunk", "doc"], default="chunk",
                         help="Membership split: 'chunk' (legacy, v0.1-thesis) or 'doc' "
                              "(document-level, no sibling-chunk leakage — recommended).")
+    parser.add_argument("--graybox", action="store_true",
+                        help="Gray-box S2MIA (native perplexity from target logprobs) + "
+                             "RAG-MIA (continuous P(Yes) from first-token logprobs). "
+                             "Requires an LLM provider exposing logprobs (e.g. azure_openai). "
+                             "Writes scores_{s2mia,rag_mia}_graybox.csv; budgetleak unchanged.")
     args = parser.parse_args()
 
     # CLI override → env → default. get_settings() rilegge env.
@@ -85,15 +90,32 @@ def main():
     # suffix for non-none defenses
     suffix = "" if args.defense == "none" else f"_{args.defense}"
 
-    print(f"[6/6] running attacks (defense={args.defense})...", flush=True)
+    print(f"[6/6] running attacks (defense={args.defense}, graybox={args.graybox})...", flush=True)
     import time as _time
-    for name, fn in [("s2mia", s2mia_scores), ("budgetleak", budgetleak_scores), ("rag_mia", rag_mia_scores)]:
+
+    if args.graybox:
+        # Gray-box: usa logprob del target (solo S2MIA e RAG-MIA; BudgetLeak è
+        # comportamentale, invariato). Suffisso _graybox (+ eventuale difesa).
+        gb_suffix = "_graybox" + suffix
+        attack_plan = [
+            ("s2mia", s2mia_scores_native_ppl, gb_suffix),
+            ("rag_mia", rag_mia_graybox_scores, gb_suffix),
+            ("budgetleak", budgetleak_scores, suffix),
+        ]
+    else:
+        attack_plan = [
+            ("s2mia", s2mia_scores, suffix),
+            ("budgetleak", budgetleak_scores, suffix),
+            ("rag_mia", rag_mia_scores, suffix),
+        ]
+
+    for name, fn, suf in attack_plan:
         t0 = _time.time()
-        print(f"       ▶ {name} starting on {len(targets)} chunks...", flush=True)
+        print(f"       ▶ {name}{suf} starting on {len(targets)} chunks...", flush=True)
         scores, labels = fn(rag, targets)
-        _save(s.results_dir / f"scores_{name}{suffix}.csv", targets, scores, labels)
+        _save(s.results_dir / f"scores_{name}{suf}.csv", targets, scores, labels)
         dt = _time.time() - t0
-        print(f"       ✓ {name}: saved {len(scores)} scores ({dt:.1f}s, {dt/len(targets):.2f}s/chunk)", flush=True)
+        print(f"       ✓ {name}{suf}: saved {len(scores)} scores ({dt:.1f}s, {dt/len(targets):.2f}s/chunk)", flush=True)
 
 if __name__ == "__main__":
     main()

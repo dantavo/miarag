@@ -128,3 +128,61 @@ def rag_mia_scores(rag, chunks: list[Chunk], language: str = "it") -> tuple[list
         scores.append(f["yes_score"])
         labels.append(int(c.is_member))
     return scores, labels
+
+
+# ─── Gray-box (logprobs) ──────────────────────────────────────────────────
+# Token che contano come "Sì" / "No" nella logprob del primo token generato.
+_YES_TOKENS = {"Sì", "Si", "S", "Sí", "sì", "si", "Yes", "yes", "Y"}
+_NO_TOKENS = {"No", "no", "N", "Non", "non"}
+
+
+def _logsumexp(vals: list[float]) -> float:
+    import math
+    if not vals:
+        return float("-inf")
+    m = max(vals)
+    return m + math.log(sum(math.exp(v - m) for v in vals))
+
+
+def rag_mia_graybox_score(first_top: dict[str, float]) -> float:
+    """Score continuo dai top-logprob del primo token generato.
+
+    P(Sì) / (P(Sì) + P(No)) via softmax sui logprob raccolti per i token
+    Sì-family e No-family. Se nessuno dei due compare → 0.5 (incerto).
+
+    Continuo in [0,1] → risolve il problema del black-box (score discreti
+    {0,0.5,1.0} → TPR@1%FPR=0). È la variante gray-box di Anderson 2025.
+    """
+    import math
+    yes_lps = [lp for tok, lp in first_top.items() if tok.strip() in _YES_TOKENS]
+    no_lps = [lp for tok, lp in first_top.items() if tok.strip() in _NO_TOKENS]
+    if not yes_lps and not no_lps:
+        return 0.5
+    ly = _logsumexp(yes_lps) if yes_lps else float("-inf")
+    ln = _logsumexp(no_lps) if no_lps else float("-inf")
+    # softmax(ly, ln) → P(Sì)
+    m = max(ly, ln)
+    ey, en = math.exp(ly - m), math.exp(ln - m)
+    return float(ey / (ey + en))
+
+
+def rag_mia_graybox_features(rag, chunk_text: str, language: str = "it",
+                             max_tokens: int = 8) -> dict:
+    """RAG-MIA gray-box: prompt injection + logprob del primo token → score continuo.
+    Richiede rag.query_with_logprobs (provider con logprobs, es. Azure)."""
+    sample = _truncate(chunk_text)
+    template = _PROMPT_IT if language == "it" else _PROMPT_EN
+    prompt = template.format(sample=sample)
+    out = rag.query_with_logprobs(prompt, max_tokens=max_tokens)
+    score = rag_mia_graybox_score(out["first_top"])
+    return {"score": score, "answer": out["answer"], "first_top": out["first_top"]}
+
+
+def rag_mia_graybox_scores(rag, chunks: list[Chunk], language: str = "it") -> tuple[list[float], list[int]]:
+    """Batch RAG-MIA gray-box. Ritorna (scores continui in [0,1], labels)."""
+    scores, labels = [], []
+    for c in chunks:
+        f = rag_mia_graybox_features(rag, c.text, language=language)
+        scores.append(f["score"])
+        labels.append(int(c.is_member))
+    return scores, labels

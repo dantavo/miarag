@@ -90,6 +90,34 @@ def s2mia_scores(rag, chunks: list[Chunk]):
     return scores, labels
 
 
+def s2mia_features_native_ppl(rag, chunk_text: str) -> dict:
+    """S2MIA gray-box: usa la perplexity NATIVA del modello target (dai suoi
+    logprob) invece del proxy GPT-2. Richiede rag.query_with_logprobs.
+
+    ppl_native = exp(-mean logprob dei token generati) → segnale di fluenza
+    misurato dal target stesso, non da un LM inglese esterno.
+    """
+    import math
+    query, expected = split_query_answer(chunk_text)
+    out = rag.query_with_logprobs(query)
+    gen = out["answer"]
+    bleu = sentence_bleu([expected.split()], gen.split(), smoothing_function=_smooth) \
+        if expected.split() and gen.split() else 0.0
+    lps = out["token_logprobs"]
+    ppl = math.exp(-sum(lps) / len(lps)) if lps else float("inf")
+    return {"bleu": float(bleu), "perplexity": float(ppl)}
+
+
+def s2mia_scores_native_ppl(rag, chunks: list[Chunk]):
+    """Batch S2MIA con perplexity nativa (gray-box). Ritorna (scores, labels)."""
+    scores, labels = [], []
+    for c in chunks:
+        f = s2mia_features_native_ppl(rag, c.text)
+        scores.append(f["bleu"] + _inv_ppl(f["perplexity"]))
+        labels.append(int(c.is_member))
+    return scores, labels
+
+
 def s2mia_scores_model(rag, chunks: list[Chunk], seed: int = 42, use_cosine: bool = False):
     """Variante S2MIA-M: feature (bleu, inv_ppl, [cosine]) → XGBoost.
     Ritorna probabilità OUT-OF-SAMPLE via cross-validation (nessun fit-and-predict
