@@ -55,6 +55,10 @@ def main():
                              "RAG-MIA (continuous P(Yes) from first-token logprobs). "
                              "Requires an LLM provider exposing logprobs (e.g. azure_openai). "
                              "Writes scores_{s2mia,rag_mia}_graybox.csv; budgetleak unchanged.")
+    parser.add_argument("--results-dir", default=None,
+                        help="Directory di output per gli scores (default: results/). "
+                             "Usa una dir separata per eseguire run in parallelo senza "
+                             "sovrascrivere i CSV (es. --results-dir results_ollama44).")
     args = parser.parse_args()
 
     # CLI override → env → default. get_settings() rilegge env.
@@ -109,11 +113,16 @@ def main():
             ("rag_mia", rag_mia_scores, suffix),
         ]
 
+    from pathlib import Path as _Path
+    out_dir = _Path(args.results_dir) if args.results_dir else s.results_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"       output dir: {out_dir}", flush=True)
+
     for name, fn, suf in attack_plan:
         t0 = _time.time()
         print(f"       ▶ {name}{suf} starting on {len(targets)} chunks...", flush=True)
         scores, labels = fn(rag, targets)
-        _save(s.results_dir / f"scores_{name}{suf}.csv", targets, scores, labels)
+        _save(out_dir / f"scores_{name}{suf}.csv", targets, scores, labels)
         dt = _time.time() - t0
         print(f"       ✓ {name}{suf}: saved {len(scores)} scores ({dt:.1f}s, {dt/len(targets):.2f}s/chunk)", flush=True)
 
