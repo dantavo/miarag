@@ -29,3 +29,8 @@ documenti/
 
 # Documentazione privata (spiegazioni implementazione, mai su git)
 docs_private/
+
+# Wiki scraper locale (credenziali/URL da .env, dati privati) — MAI su git
+scripts/wiki_scraper.py
+scripts/*scraper*
+documenti_raw/
