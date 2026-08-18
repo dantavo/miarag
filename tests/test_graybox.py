@@ -63,3 +63,29 @@ def test_graybox_scores_separates_and_continuous():
     assert scores[0] > scores[1]                 # membro più alto
     assert all(0.0 <= s <= 1.0 for s in scores)  # in [0,1]
     assert scores[0] not in (0.0, 0.5, 1.0)      # continuo, non discreto
+
+
+class _FlakyRAG:
+    """RAG che fallisce su un chunk specifico (simula blip di rete)."""
+    def __init__(self): self.calls = 0
+    def query(self, question, max_tokens=256):
+        from miarag.rag import RAGResponse
+        self.calls += 1
+        if "BOOM" in question:
+            raise RuntimeError("simulated network blip")
+        return RAGResponse(answer="Sì" if "MEM" in question else "No", retrieved_ids=["x"], perplexity=None)
+    def perplexity_of(self, text): return 5.0
+
+
+def test_rag_mia_scores_resilient_to_chunk_failure():
+    """Un chunk che fa BOOM viene saltato, gli altri no (resilienza per-chunk)."""
+    from miarag.corpus import Chunk
+    from miarag.attacks.rag_mia import rag_mia_scores
+    chunks = [
+        Chunk("m1", "d", "MEM ok uno", is_member=True, has_person=False),
+        Chunk("bad", "d", "BOOM fallisce", is_member=True, has_person=False),
+        Chunk("n1", "d", "XXX ok due", is_member=False, has_person=False),
+    ]
+    scores, labels = rag_mia_scores(_FlakyRAG(), chunks)
+    # il chunk BOOM è saltato → 2 risultati su 3, scores/labels allineati
+    assert len(scores) == 2 and len(labels) == 2

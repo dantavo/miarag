@@ -123,10 +123,17 @@ def rag_mia_scores(rag, chunks: list[Chunk], language: str = "it") -> tuple[list
       returns (scores, labels)
     """
     scores, labels = [], []
+    skipped = 0
     for c in chunks:
-        f = rag_mia_features(rag, c.text, language=language)
-        scores.append(f["yes_score"])
-        labels.append(int(c.is_member))
+        try:
+            f = rag_mia_features(rag, c.text, language=language)
+            scores.append(f["yes_score"])
+            labels.append(int(c.is_member))
+        except Exception as e:
+            skipped += 1
+            print(f"[rag_mia] skip {c.chunk_id}: {type(e).__name__}: {str(e)[:100]}", flush=True)
+    if skipped:
+        print(f"[rag_mia] {skipped}/{len(chunks)} chunk saltati", flush=True)
     return scores, labels
 
 
@@ -181,8 +188,15 @@ def rag_mia_graybox_features(rag, chunk_text: str, language: str = "it",
 def rag_mia_graybox_scores(rag, chunks: list[Chunk], language: str = "it") -> tuple[list[float], list[int]]:
     """Batch RAG-MIA gray-box. Ritorna (scores continui in [0,1], labels)."""
     scores, labels = [], []
+    skipped = 0
     for c in chunks:
-        f = rag_mia_graybox_features(rag, c.text, language=language)
-        scores.append(f["score"])
-        labels.append(int(c.is_member))
+        try:
+            f = rag_mia_graybox_features(rag, c.text, language=language)
+            scores.append(f["score"])
+            labels.append(int(c.is_member))
+        except Exception as e:
+            skipped += 1
+            print(f"[rag_mia_graybox] skip {c.chunk_id}: {type(e).__name__}: {str(e)[:100]}", flush=True)
+    if skipped:
+        print(f"[rag_mia_graybox] {skipped}/{len(chunks)} chunk saltati", flush=True)
     return scores, labels

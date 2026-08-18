@@ -82,11 +82,18 @@ def s2mia_features(rag, chunk_text: str, use_cosine: bool = False) -> dict:
 
 def s2mia_scores(rag, chunks: list[Chunk]):
     scores, labels = [], []
+    skipped = 0
     for c in chunks:
-        f = s2mia_features(rag, c.text)
-        # score monotono: BLEU alta e perplexity bassa ⇒ membro
-        scores.append(f["bleu"] + _inv_ppl(f["perplexity"]))
-        labels.append(int(c.is_member))
+        try:
+            f = s2mia_features(rag, c.text)
+            # score monotono: BLEU alta e perplexity bassa ⇒ membro
+            scores.append(f["bleu"] + _inv_ppl(f["perplexity"]))
+            labels.append(int(c.is_member))
+        except Exception as e:  # resilienza per-chunk: blip di rete non uccide l'attacco
+            skipped += 1
+            print(f"[s2mia] skip {c.chunk_id}: {type(e).__name__}: {str(e)[:100]}", flush=True)
+    if skipped:
+        print(f"[s2mia] {skipped}/{len(chunks)} chunk saltati per errori transitori", flush=True)
     return scores, labels
 
 
@@ -111,10 +118,17 @@ def s2mia_features_native_ppl(rag, chunk_text: str) -> dict:
 def s2mia_scores_native_ppl(rag, chunks: list[Chunk]):
     """Batch S2MIA con perplexity nativa (gray-box). Ritorna (scores, labels)."""
     scores, labels = [], []
+    skipped = 0
     for c in chunks:
-        f = s2mia_features_native_ppl(rag, c.text)
-        scores.append(f["bleu"] + _inv_ppl(f["perplexity"]))
-        labels.append(int(c.is_member))
+        try:
+            f = s2mia_features_native_ppl(rag, c.text)
+            scores.append(f["bleu"] + _inv_ppl(f["perplexity"]))
+            labels.append(int(c.is_member))
+        except Exception as e:
+            skipped += 1
+            print(f"[s2mia_graybox] skip {c.chunk_id}: {type(e).__name__}: {str(e)[:100]}", flush=True)
+    if skipped:
+        print(f"[s2mia_graybox] {skipped}/{len(chunks)} chunk saltati", flush=True)
     return scores, labels
 
 
