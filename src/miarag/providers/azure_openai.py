@@ -30,16 +30,21 @@ class AzureOpenAIProvider:
     name: str = "azure_openai"
     connect_timeout: float = 10.0
     read_timeout: float = 120.0
-    max_retries: int = 3
+    max_retries: int = 6
     top_logprobs: int = 5
+    min_interval: float = 0.0   # secondi minimi tra richieste (rate limiting)
 
     def __post_init__(self):
+        import os
         import httpx
         base = self.endpoint.rstrip("/")
         self._url = (
             f"{base}/openai/deployments/{self.deployment}"
             f"/chat/completions?api-version={self.api_version}"
         )
+        # Rate limit configurabile via env (evita 429 su batch lunghi).
+        self.min_interval = float(os.getenv("AZURE_MIN_INTERVAL", str(self.min_interval)))
+        self._last_call = 0.0
         self._client = httpx.Client(
             timeout=httpx.Timeout(
                 connect=self.connect_timeout, read=self.read_timeout,
@@ -48,19 +53,32 @@ class AzureOpenAIProvider:
             headers={"api-key": self.api_key, "content-type": "application/json"},
         )
 
-    # ─── core POST con retry ──────────────────────────────────────────────
+    # ─── core POST con retry + rate limiting + 429 Retry-After ────────────
     def _post(self, body: dict) -> dict:
         import time, httpx
         last = None
         for attempt in range(self.max_retries):
+            # Throttling: rispetta un intervallo minimo tra richieste.
+            if self.min_interval > 0:
+                wait = self.min_interval - (time.monotonic() - self._last_call)
+                if wait > 0:
+                    time.sleep(wait)
             try:
                 r = self._client.post(self._url, json=body)
+                self._last_call = time.monotonic()
+                if r.status_code == 429:
+                    # Rispetta Retry-After se presente, altrimenti backoff esponenziale.
+                    ra = r.headers.get("Retry-After")
+                    delay = float(ra) if ra and ra.replace(".", "", 1).isdigit() else min(60.0, 2 ** (attempt + 1))
+                    last = RuntimeError(f"429 Too Many Requests (retry-after={ra})")
+                    time.sleep(delay)
+                    continue
                 r.raise_for_status()
                 return r.json()
-            except Exception as e:  # noqa: BLE001
+            except httpx.HTTPError as e:
                 last = e
                 if attempt < self.max_retries - 1:
-                    time.sleep(2 ** (attempt + 1))
+                    time.sleep(min(60.0, 2 ** (attempt + 1)))  # backoff, cap 60s
         raise RuntimeError(f"Azure call failed after {self.max_retries} attempts: {last}")
 
     def _body(self, prompt: str, max_tokens: int, logprobs: bool = False) -> dict:

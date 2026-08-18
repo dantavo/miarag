@@ -59,6 +59,9 @@ def main():
                         help="Directory di output per gli scores (default: results/). "
                              "Usa una dir separata per eseguire run in parallelo senza "
                              "sovrascrivere i CSV (es. --results-dir results_ollama44).")
+    parser.add_argument("--attacks", default=None,
+                        help="Sottoinsieme di attacchi da eseguire (csv: s2mia,budgetleak,rag_mia). "
+                             "Default: tutti. Utile per ri-eseguire solo quelli falliti.")
     args = parser.parse_args()
 
     # CLI override → env → default. get_settings() rilegge env.
@@ -118,13 +121,23 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"       output dir: {out_dir}", flush=True)
 
+    # Filtro opzionale sugli attacchi (--attacks s2mia,rag_mia).
+    if args.attacks:
+        wanted = {a.strip() for a in args.attacks.split(",") if a.strip()}
+        attack_plan = [t for t in attack_plan if t[0] in wanted]
+        print(f"       attacchi selezionati: {[t[0] for t in attack_plan]}", flush=True)
+
     for name, fn, suf in attack_plan:
         t0 = _time.time()
         print(f"       ▶ {name}{suf} starting on {len(targets)} chunks...", flush=True)
-        scores, labels = fn(rag, targets)
-        _save(out_dir / f"scores_{name}{suf}.csv", targets, scores, labels)
-        dt = _time.time() - t0
-        print(f"       ✓ {name}{suf}: saved {len(scores)} scores ({dt:.1f}s, {dt/len(targets):.2f}s/chunk)", flush=True)
+        try:
+            scores, labels = fn(rag, targets)
+            _save(out_dir / f"scores_{name}{suf}.csv", targets, scores, labels)
+            dt = _time.time() - t0
+            print(f"       ✓ {name}{suf}: saved {len(scores)} scores ({dt:.1f}s, {dt/len(targets):.2f}s/chunk)", flush=True)
+        except Exception as e:  # resiliente: un attacco fallito non blocca gli altri
+            dt = _time.time() - t0
+            print(f"       ✗ {name}{suf}: FALLITO dopo {dt:.0f}s — {type(e).__name__}: {str(e)[:200]}", flush=True)
 
 if __name__ == "__main__":
     main()
