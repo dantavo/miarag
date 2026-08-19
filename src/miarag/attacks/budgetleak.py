@@ -38,19 +38,11 @@ def _feature_vector(rag, chunk_text: str) -> list[float]:
     return [f["rate_of_change"], f["cumulative_fluctuation"], f["final_sim"]]
 
 def budgetleak_scores(rag, chunks: list[Chunk]):
-    scores, labels = [], []
-    skipped = 0
-    for c in chunks:
-        try:
-            roc, fluct, final = _feature_vector(rag, c.text)
-            scores.append(roc + final)        # membro: sale in fretta + finisce alto
-            labels.append(int(c.is_member))
-        except Exception as e:  # resilienza per-chunk (budgetleak = 3 call/chunk, più esposto ai blip)
-            skipped += 1
-            print(f"[budgetleak] skip {c.chunk_id}: {type(e).__name__}: {str(e)[:100]}", flush=True)
-    if skipped:
-        print(f"[budgetleak] {skipped}/{len(chunks)} chunk saltati per errori transitori", flush=True)
-    return scores, labels
+    from miarag.attacks._common import scored_loop
+    def score(c):
+        roc, fluct, final = _feature_vector(rag, c.text)
+        return roc + final        # membro: sale in fretta + finisce alto
+    return scored_loop("budgetleak", chunks, score)
 
 def budgetleak_scores_fcm(rag, chunks: list[Chunk], seed: int = 42):
     import skfuzzy as fuzz
