@@ -243,3 +243,9 @@ embedder / perplexity backends at runtime.
   [`DS4_EC2.md`](DS4_EC2.md) (optional remote infrastructure),
   [`TODO.md`](TODO.md) (roadmap).
 - PoC code versioning is separate from the thesis Vault.
+
+## License
+
+[MIT](LICENSE) © 2026 Daniele Tavolaro. Research proof-of-concept for a master's
+thesis; provided "as is". The attack code is for defensive research and privacy
+risk assessment on systems you own or are authorized to test.
