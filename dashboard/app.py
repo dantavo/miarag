@@ -1,7 +1,15 @@
 """Streamlit dashboard di presentazione per il PoC MIA-on-RAG."""
 import json
+import sys
 import tempfile
 from pathlib import Path
+
+# Bootstrap: aggiunge src/ al path così `miarag` è importabile anche lanciando
+# `streamlit run dashboard/app.py` senza PYTHONPATH=src.
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
 import streamlit as st
 import pandas as pd
 
