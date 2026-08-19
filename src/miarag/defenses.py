@@ -24,6 +24,15 @@ class _Wrapped:
             return RAGResponse(answer=self._ta(resp.answer),
                                retrieved_ids=resp.retrieved_ids, perplexity=resp.perplexity)
         return resp
+    def query_with_logprobs(self, question, max_tokens=256):
+        # Applica la difesa anche al path gray-box: transform_q sulla domanda
+        # (es. prompt hardening) → il modello vede la difesa → i logprob Sì/No la
+        # riflettono. transform_a sull'answer testuale (paraphrase).
+        out = self._inner.query_with_logprobs(self._tq(question), max_tokens=max_tokens)
+        if isinstance(out, dict) and "answer" in out:
+            out = dict(out)
+            out["answer"] = self._ta(out["answer"])
+        return out
     def perplexity_of(self, text):
         return self._inner.perplexity_of(text)
     def __getattr__(self, name):
