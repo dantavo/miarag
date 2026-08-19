@@ -5,14 +5,36 @@ Experimental proof-of-concept accompanying a master's thesis: verify whether a
 indexed by a **RAG** (Retrieval-Augmented Generation) system by querying it
 only through its interface (question → answer).
 
-> ⚠️ **Privacy / data.** The real corpus (business reports with PII) is **not**
+> ⚠️ **Privacy / data.** The real corpus (business documents with PII) is **not**
 > in this repository and is excluded via `.gitignore` (`documenti/`, `data/`,
 > `results/`, `.env`). Before indexing, every document is processed by a
 > **pseudonymization** pipeline that replaces direct identifiers (names, tax
-> codes, VAT numbers, IBAN, email, phone, addresses, …) with deterministic
-> tokens `<TYPE>_<hash8>`, backed by a *fail-closed backstop* on any residual
-> digit sequence ≥ 9 characters. The repository contains **only code and
-> synthetic tests**.
+> codes, VAT numbers, IBAN, email, phone, addresses, organization names, inline
+> system credentials, …) with deterministic tokens `<TYPE>_<hash8>`, backed by a
+> *fail-closed backstop* on any residual digit sequence ≥ 9 characters. The
+> repository contains **only code and aggregate metrics**.
+
+## TL;DR — results
+
+Realistic scenario: an enterprise RAG over an internal technical wiki, into which
+**client documents (with PII) are erroneously indexed**. Can a black-box attacker
+detect them? Corpus: 44 documents → 1407 chunks, document-level split, targets
+**GPT-4o-mini** (Azure) and **llama3.1:8b** (Ollama).
+
+| Attack | GPT-4o-mini | llama3.1 | metric |
+|---|---|---|---|
+| S2MIA | 0.618 | 0.543 | AUC |
+| BudgetLeak | 0.592 | 0.560 | AUC |
+| RAG-MIA (black-box) | 0.796 | 0.769 | AUC |
+| **RAG-MIA (gray-box, logprobs)** | **0.988** (TPR@1%FPR **0.750**) | — | AUC |
+
+**Headline**: exposing token **logprobs** (available on the commercial API, not on
+the local model) turns RAG-MIA near-perfect and defeats the low-FPR limitation of
+the black-box variant. Prompt-hardening does **not** neutralize it (0.988 → 0.971).
+
+![AUC per attack and target](assets/auc_barchart.png)
+
+📊 **Full results, plots and methodology → [RESULTS.md](RESULTS.md)**
 
 ## What it measures
 
@@ -20,10 +42,12 @@ Three attacks implemented on top of the same black-box interface, plus baselines
 described in the thesis:
 
 - **RAG-MIA** (Anderson 2025) — prompt injection: asks the LLM whether the
-  target document appears in the retrieved context. Score = parsed Yes/No.
-- **S2MIA** — signal from *BLEU* (answer↔document overlap) + *perplexity*
-  (local LM proxy) + optional *cosine similarity* (via embedder).
-- **BudgetLeak** — side-channel on the *generation budget* (max_tokens /
+  target document appears in the retrieved context. Black-box (parsed Yes/No) and
+  **gray-box** (continuous `P(Yes)` from token logprobs).
+- **S2MIA** (Li 2025) — signal from *BLEU* (answer↔document overlap) +
+  *perplexity* (GPT-2 proxy, or the target's **native perplexity** in gray-box) +
+  optional *cosine similarity*.
+- **BudgetLeak** (Li 2025) — side-channel on the *generation budget* (max_tokens /
   `num_predict` depending on backend).
 
 Attack metrics (`metrics` module): **AUC/ROC**, **TPR@1%FPR**, **PPV with
