@@ -1,0 +1,11 @@
+# Streamlit config per la dashboard MIA-RAG.
+# fileWatcherType="none": disabilita l'hot-reload watcher che, ispezionando i
+# moduli transformers (processori vision: vitmatte/yolos/zoedepth…), tenta di
+# importare torchvision (non installato, non usato) e spamma ModuleNotFoundError.
+# La dashboard non ha bisogno dell'auto-reload; per ricaricare basta "R" nella UI.
+[server]
+fileWatcherType = "none"
+headless = true
+
+[browser]
+gatherUsageStats = false
