@@ -1,67 +1,56 @@
-# TODO / Roadmap post-refactor v0.2
+# TODO / Roadmap
 
-State: everything merged into `main`. Refactor branch and `v0.1-thesis` tag
-have been cleaned up during history rewrite.
+PoC **completa**. Questo file traccia cosa è stato fatto e i possibili sviluppi
+futuri (utile per il capitolo "lavori futuri" della tesi). Nessun item residuo è
+bloccante.
 
-## Done
+## Fatto
 
-- [x] **Pluggable providers**: Protocol for LLM / Embedding / Perplexity
-  (`src/miarag/providers/`).
-- [x] Backends: `ollama`, `azure_openai`, `bedrock`, `sentence_tf`,
-  `openai_embed`, `gpt2`, `hf_causal` (generic, useful for Italian LMs).
-- [x] Registry + factory with lazy import (no heavy boot cost).
-- [x] `Settings.validate()` fail-fast on missing env vars.
-- [x] `TargetRAG` with DI (`llm=`, `embedder=`, `ppl=`) + backcompat for the
-  positional v0.1-thesis signature.
-- [x] CLI `run_attack.py`: flags `--llm/--embed/--ppl`.
-- [x] Dashboard: provider selectbox in the sidebar.
-- [x] BudgetLeak: `FINAL_SIM_IDX` constant (no more magic index `cntr[:, 2]`).
-- [x] S2MIA: split on punctuation (token-mid fallback), optional cosine
-  similarity feature via `use_cosine=True`.
-- [x] Retry/backoff with `tenacity` for paid API providers (Azure, Bedrock).
-- [x] Token/cost tracker (`providers/_cost.py`, `TRACKER` singleton).
-- [x] Optional persistent Chroma via `persist_dir=...` in TargetRAG.
-- [x] Provider-agnostic tests (`tests/test_providers.py`): Protocol contract,
-  DI composition, swap provider, cost tracking, persistent chroma.
-- [x] **RAG-MIA (Anderson 2025)** as third attack: prompt injection black-box.
-  `src/miarag/attacks/rag_mia.py` + 13 tests. Wired into `run_attack.py`,
-  `run_eval.py`, dashboard live attacks. Score in [0,1]: Yes=1, No=0,
-  refusal=0.5 (defense-aware for prompt hardening).
-  **76 total tests, 75 pass, 1 known skip**.
+### Framework
+- [x] Provider pluggable (Protocol LLM/Embedding/Perplexity): `ollama`,
+  `azure_openai`, `bedrock`, `sentence_tf`, `openai_embed`, `gpt2`, `hf_causal`.
+- [x] Registry + factory (lazy import), `Settings.validate()` fail-fast,
+  `get_settings()` legge env a runtime (flag CLI `--llm/--embed/--ppl` effettivi).
+- [x] `TargetRAG` con DI + backcompat firma v0.1-thesis.
+- [x] Split a documento (`--split doc`) oltre al chunk-level legacy.
+- [x] Retry/backoff + **gestione 429 (Retry-After) + throttling** (Azure).
+- [x] Resilienza per-chunk (un blip salta 1 chunk, non uccide l'attacco).
+- [x] Progress-log con ETA reale (`attacks/_common.scored_loop`).
+- [x] Cost tracker (`providers/_cost.py`), Chroma persistente opzionale.
 
-## To do (decreasing priority)
+### Attacchi
+- [x] **S2MIA** (BLEU + perplexity, split su punteggiatura, cosine opzionale).
+- [x] **BudgetLeak** (Tri-Budget + Jaccard, FCM zero-knowledge).
+- [x] **RAG-MIA** (Anderson 2025) prompt injection black-box.
+- [x] **Gray-box via logprob** (Azure): RAG-MIA continuo `P(Sì)` (risolve
+  TPR@1%FPR=0) + S2MIA perplexity nativa (no proxy GPT-2). Difesa applicata
+  anche al path gray-box.
 
-### High
+### Gate PII / etica
+- [x] Regex IT-legal (CF/PIVA/REA/catasto) + NER italiano + nomi-azienda (env,
+  fail-closed) + backstop cifre ≥9 + **redazione credenziali inline** (`SECRET_`).
+- [x] Verifica fail-closed: 0 PII residua su corpus 44-doc.
 
-- [ ] **Italian PPL as default**: switch to `PERPLEXITY_PROVIDER=hf_causal` +
-  `PERPLEXITY_HF_MODEL=sapienzanlp/Minerva-350M-base-v1.0` as the default in
-  `.env.example` and document in README (measurable impact on S2MIA AUC for
-  IT corpora vs GPT-2 EN). Currently gated on HF approval — evaluate
-  non-gated alternatives.
-- [ ] **macOS ARM segfault** on the full suite when
-  `test_backcompat_positional_signature` runs together with xgboost+tqdm:
-  currently skipped. Root cause: tqdm monitor thread + torch cleanup +
-  xgboost thread pool. Try `TQDM_DISABLE=1` or disable xgboost threads
-  (`OMP_NUM_THREADS=1`).
-- [ ] Wire `use_cosine=True` as a CLI flag in `run_attack.py` for S2MIA-M.
+### Esperimenti / output
+- [x] Run 44-doc (33 wiki + 11 società), doc-split, 2 target (Azure/Ollama).
+- [x] 6 grafici ROC/distribuzioni (`results/plots/`).
+- [x] Dashboard Streamlit aggiornata (metriche 44-doc + galleria plot; avvio diretto).
+- [x] Suite offline: **93 test, 1 skip noto**.
 
-### Medium
+## Sviluppi futuri (opzionali — per "lavori futuri" in tesi)
 
-- [ ] **Rate limit / hard cost cap** on TRACKER: `TRACKER.max_calls`, raise
-  above threshold.
-- [ ] **Native logprobs** on Azure OpenAI (`supports_logprobs=True`):
-  implement `AzureLogprobPerplexity` using `logprobs=True` instead of the HF
-  proxy → S2MIA signal more faithful to the target model.
-- [ ] Persist Chroma by default in `data/chroma/` for `run_attack.py` (avoids
-  reindexing on every run for large corpora).
-- [ ] BERTScore as an additional S2MIA feature (on top of BLEU + cosine).
+### Sperimentali
+- [ ] Difese complete su 44-doc (paraphrase + prompt_hardening su tutti gli
+  attacchi/target). Interrotte da cadute di rete; lanciare sotto `caffeinate -dimsu`.
+- [ ] BudgetLeak-P completa (attention-LSTM su shadow RAG) e multi-metrica
+  (cosine/ROUGE/edit-distance su 14 budget) → robustezza reale alle difese
+  (la variante ridotta Tri-Budget/Jaccard è fragile).
+- [ ] PPL italiana di default (`hf_causal` + Minerva) — attualmente gated su HF.
+- [ ] BERTScore come feature S2MIA aggiuntiva.
 
-### Low / nice-to-have
-
-- [ ] `gemini` provider (Google Vertex AI) as a 4th option.
-- [ ] `local_hf` provider (HuggingFace transformers) as a target LLM for
-  comparison against Ollama on the same model (Llama-3.1 8B in HF format).
-- [ ] Dashboard: live cost tracker panel (`TRACKER.snapshot()`).
-- [ ] Migrate `dataclass(frozen=True)` → `pydantic.BaseModel` for Settings
-  (type validation + serialization).
-- [ ] CI on GitHub Actions with matrix (Python 3.11/3.12, macOS/Linux).
+### Ingegneria
+- [ ] Rate/cost cap hard su `TRACKER` (`max_calls`).
+- [ ] Provider `gemini` (Vertex AI) e `local_hf` (Llama-3.1 in HF format).
+- [ ] Fix segfault macOS ARM full-suite (torch+xgboost+tqdm): `TQDM_DISABLE=1`
+  o `OMP_NUM_THREADS=1` (test `test_backcompat_positional_signature` skippato).
+- [ ] Migrazione Settings a `pydantic.BaseModel`; CI GitHub Actions (matrix).
