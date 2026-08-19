@@ -98,7 +98,7 @@ with st.sidebar.expander("Provider (avanzato)"):
 
 # ====== SEZIONE 1: ATTACCHI LIVE ======
 if section == "Attacchi Live":
-    st.header("Attacchi Live su Ollama")
+    st.header("Attacchi Live (Ollama / Azure)")
     st.markdown("""
     **Esegue attacchi di Membership Inference in tempo reale** contro il RAG locale (Ollama).
 
@@ -241,36 +241,53 @@ if section == "Attacchi Live":
 elif section == "Metriche & Grafici":
     st.header("Metriche & Grafici")
     st.markdown("""
-    **Visualizza i risultati del full-run** (già eseguito su tutti i 245 chunk del corpus).
+    **Risultati full-run** su corpus realistico **44 documenti** (33 wiki tecnici + 11 documenti-società), **1407 chunk**, split a livello documento (`--split doc`).
 
-    **Metriche chiave** (prior membership = 0.1):
-    - **AUC**: area sotto curva ROC. >0.5 = meglio di casuale; ≥0.7 = attacco forte.
-    - **TPR@1%FPR**: true positive rate quando FPR ≤ 1% (setting conservativo: attaccante accetta max 1% falsi positivi).
-    - **PPV (Positive Predictive Value)**: probabilità che un "membro predetto" sia davvero membro, corretto per prior π=0.1 (formula Bayesiana: π·TPR / (π·TPR + (1−π)·FPR)).
-    - **Advantage**: TPR − FPR (guadagno netto sopra random guess).
+    **Metriche** (prior membership π=0.1): **AUC** (>0.5 meglio di casuale, ≥0.7 forte), **TPR@1%FPR** (conservativo), **PPV** (corretto per prior), **Advantage** (TPR−FPR).
 
-    **Risultati tesi** (defense=none, embedding MiniLM-L6-v2, 5 documenti corpus):
-    - S2MIA: AUC 0.527 — lievemente sopra casuale, corpus piccolo limita segnale.
-    - BudgetLeak: AUC 0.521 — simile, side-channel budget debole su corpus ridotto.
+    **Risultati definitivi (AUC / TPR@1%FPR / advantage):**
 
-    ℹ️ Con corpus 20-50 doc, AUC attesa 0.6-0.75+ (vedi letteratura Carlini et al. 2021).
+    | Attacco | GPT-4o-mini (Azure) | llama3.1 (Ollama) |
+    |---|---|---|
+    | S2MIA | 0.618 / 0.081 / 0.235 | 0.543 / 0.132 / 0.179 |
+    | BudgetLeak | 0.592 / 0.155 / 0.221 | 0.560 / 0.159 / 0.202 |
+    | RAG-MIA black-box | 0.796 / 0.000 / 0.592 | 0.769 / 0.000 / 0.538 |
+    | S2MIA gray-box (ppl nativa) | 0.655 / 0.084 / 0.255 | — (no logprob) |
+    | **RAG-MIA gray-box** (logprob) | **0.988 / 0.750 / 0.910** | — (no logprob) |
+
+    **Findings:** (1) **RAG-MIA gray-box** è il risultato più forte (AUC 0.988, TPR@1%FPR 0.750): i logprob risolvono il limite degli score discreti del black-box. Solo su API (Azure), non Ollama. (2) **GPT-4o-mini più vulnerabile** di llama3.1 su tutti gli attacchi. (3) **Prompt hardening non neutralizza** RAG-MIA (gray-box resta 0.971): GPT-4o-mini è context-grounded (caso flan-ul2 di Anderson).
     """)
 
     summary_path = settings.results_dir / "summary.csv"
     rows = load_summary_rows(summary_path)
-
     if rows:
-        st.subheader("Summary Metriche")
+        st.subheader("Summary Metriche (results/summary.csv)")
         st.dataframe(pd.DataFrame(rows), use_container_width=True)
-    else:
-        st.warning("Nessun summary.csv trovato. Esegui run_attack.py + run_eval.py.")
 
-    roc_path = settings.results_dir / "roc.png"
-    if roc_path.exists():
-        st.subheader("ROC Curve")
-        st.image(str(roc_path), use_container_width=True)
-    else:
-        st.info("Nessun roc.png trovato.")
+    # Galleria grafici generati in results/plots/
+    st.subheader("Grafici ROC & distribuzioni")
+    plots_dir = settings.results_dir / "plots"
+    plot_captions = {
+        "roc_ragmia_graybox.png": "RAG-MIA: black-box vs gray-box vs difesa (headline)",
+        "auc_barchart.png": "AUC per attacco e target",
+        "roc_azure.png": "ROC — target GPT-4o-mini (Azure)",
+        "roc_ollama.png": "ROC — target llama3.1 (Ollama)",
+        "roc_target_compare.png": "RAG-MIA black-box: Azure vs Ollama",
+        "dist_ragmia_graybox.png": "Distribuzione score RAG-MIA gray-box",
+    }
+    shown = 0
+    for fname, cap in plot_captions.items():
+        fpath = plots_dir / fname
+        if fpath.exists():
+            st.image(str(fpath), caption=cap, use_container_width=True)
+            shown += 1
+    if shown == 0:
+        # fallback al vecchio roc.png
+        roc_path = settings.results_dir / "roc.png"
+        if roc_path.exists():
+            st.image(str(roc_path), caption="ROC (roc.png)", use_container_width=True)
+        else:
+            st.info("Nessun grafico trovato. Genera i plot da results/plots/.")
 
 # ====== SEZIONE 3: GATE PII ======
 elif section == "Gate PII":
@@ -285,7 +302,7 @@ elif section == "Gate PII":
 
     Ogni entità PII → token deterministico `<TIPO>_<hash8>` (stesso input = stesso token, per preservare co-occorrenze senza esporre PII).
 
-    **Qui (demo UI)**: solo regex (veloce), no NER. Il full-run con NER ha verificato **0 PII residua** su 5 PDF reali (507 token pseudonimizzati, 0 email/IBAN/CF/9+cifre nel testo finale).
+    **Qui (demo UI)**: solo regex (veloce), no NER. Il full-run con NER ha verificato **0 PII residua** sul corpus 44-doc (0 email/IBAN/CF/9+cifre + 0 nomi-azienda + 0 credenziali di sistema nel testo finale).
 
     🔒 **Ethical clearance**: nessun dato PII reale entra nel RAG né nel repository GitHub. Artefatti (reports.jsonl, results/) git-ignored.
     """)
