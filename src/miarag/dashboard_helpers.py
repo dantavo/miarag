@@ -19,10 +19,24 @@ def pii_demo(text: str, ner=None) -> str:
     return pseudonymize_text(text, ner=ner)
 
 def live_s2mia_on_chunk(rag, chunk_text: str) -> dict:
-    """Attacco S2MIA su UN chunk. Ritorna feature + score monotono (BLEU + 1/(1+ppl))."""
+    """Attacco S2MIA su UN chunk (demo dashboard). Ritorna le due feature GREZZE
+    del paper (BLEU = S_sem, perplexity = PPL_gen).
+
+    NOTA: il metodo di valutazione reale (S²MIA-M) è un classificatore XGBoost
+    addestrato sull'intero dataset — non calcolabile su un singolo chunk. Qui lo
+    `score` è solo un indicatore monotono DIMOSTRATIVO per la UI (alto ⇒ più
+    probabile membro: BLEU alta e perplexity bassa), NON il verdetto di attacco.
+    """
+    import math
     f = s2mia_features(rag, chunk_text)
-    inv_ppl = 1.0 / (1.0 + f["perplexity"])
-    return {"bleu": f["bleu"], "perplexity": f["perplexity"], "score": float(f["bleu"] + inv_ppl)}
+    ppl = f["perplexity"]
+    demo_score = f["bleu"] - (math.log(ppl) if ppl > 0 and ppl != float("inf") else 0.0)
+    return {
+        "bleu": f["bleu"],
+        "perplexity": f["perplexity"],
+        "score": float(demo_score),          # indicatore demo, non il metodo di valutazione
+        "score_is_demo": True,
+    }
 
 def live_budgetleak_on_chunk(rag, chunk_text: str) -> dict:
     """Attacco BudgetLeak su UN chunk. Ritorna la sequenza tri-budget + feature + score (roc+final)."""

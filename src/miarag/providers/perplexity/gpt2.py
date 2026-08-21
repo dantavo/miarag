@@ -27,9 +27,12 @@ class GPT2Perplexity:
     def perplexity(self, text: str) -> float:
         if not text or not text.strip():
             return float("inf")
-        enc = self._tokenizer(text, return_tensors="pt")
-        input_ids = enc.input_ids.to(self._model.device)
-        with self._torch.no_grad():
-            out = self._model(input_ids, labels=input_ids)
-            nll = out.loss.item()
+        from miarag.providers._mps import MPS_LOCK
+        # MPS non thread-safe: serializza il forward (no-op se single-thread).
+        with MPS_LOCK:
+            enc = self._tokenizer(text, return_tensors="pt")
+            input_ids = enc.input_ids.to(self._model.device)
+            with self._torch.no_grad():
+                out = self._model(input_ids, labels=input_ids)
+                nll = out.loss.item()
         return math.exp(nll)

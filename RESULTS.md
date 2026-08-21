@@ -35,11 +35,14 @@ indexed documents — quantifying the privacy damage of the accidental inclusion
 
 | Attack | GPT-4o-mini | llama3.1 |
 |---|---|---|
-| S2MIA | 0.618 / 0.081 / 0.235 | 0.543 / 0.132 / 0.179 |
+| S2MIA | 0.687 / 0.071 / 0.312 | 0.688 / 0.149 / 0.281 |
 | BudgetLeak | 0.592 / 0.155 / 0.221 | 0.560 / 0.159 / 0.202 |
 | RAG-MIA (black-box) | 0.796 / 0.000 / 0.592 | 0.769 / 0.000 / 0.538 |
-| S2MIA (gray-box, native perplexity) | 0.655 / 0.084 / 0.255 | — (no logprobs) |
+| S2MIA (gray-box, native perplexity) | 0.713 / 0.105 / 0.333 | — (no logprobs) |
 | **RAG-MIA (gray-box, logprobs)** | **0.988 / 0.750 / 0.910** | — (no logprobs) |
+
+S2MIA scores use the **S²MIA-M** classifier (XGBoost on the raw BLEU + perplexity
+features, out-of-sample via cross-validation), faithful to Li 2025 §III.B.
 
 ![AUC per attack and target](assets/auc_barchart.png)
 
@@ -53,9 +56,11 @@ indexed documents — quantifying the privacy damage of the accidental inclusion
 
    ![RAG-MIA black-box vs gray-box vs defense](assets/roc_ragmia_graybox.png)
 
-2. **The commercial model is more vulnerable.** GPT-4o-mini scores higher than
-   llama3.1:8b on **all** attacks — being more fluent and context-grounded, it
-   reproduces indexed content more faithfully, strengthening the textual signal.
+2. **The commercial model is generally more vulnerable.** GPT-4o-mini scores
+   higher than llama3.1:8b on the injection and behavioral attacks (RAG-MIA,
+   BudgetLeak) — being more fluent and context-grounded, it reproduces indexed
+   content more faithfully, strengthening the textual signal. On S2MIA the two
+   targets are on par (AUC 0.687 vs 0.688).
 
    ![RAG-MIA black-box: GPT-4o-mini vs llama3.1](assets/roc_target_compare.png)
 
@@ -71,7 +76,7 @@ indexed documents — quantifying the privacy damage of the accidental inclusion
    | gray-box | 0.988 | 0.971 |
 
 4. **Native perplexity beats the proxy.** S2MIA using the target's own logprobs
-   (0.655) outperforms the GPT-2 English proxy (0.618) on the Italian corpus.
+   (AUC 0.713) outperforms the GPT-2 English proxy (0.687) on the Italian corpus.
 
 ## ROC per target
 

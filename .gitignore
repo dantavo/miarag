@@ -18,6 +18,7 @@ chroma_db/
 data/synthetic/*.jsonl
 data/processed/
 results/
+results_azure/
 logs/
 .DS_Store
 

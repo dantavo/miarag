@@ -1,4 +1,11 @@
 # scripts/run_attack.py
+import os
+# macOS ARM: torch (gpt2 perplexity) e xgboost (S²MIA-M) caricano DUE runtime
+# OpenMP nello stesso processo → segfault nativo dentro cross_val_predict (bypassa
+# try/except: attacco muore SENZA scrivere il CSV). OMP_NUM_THREADS=1 lo previene.
+# Deve essere impostato PRIMA di importare torch/xgboost. Impatto perf ~nullo:
+# gpt2 gira su MPS, XGBoost su 1407×2 feature è banale.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 import argparse
 import csv, json
 from pathlib import Path
@@ -7,7 +14,7 @@ from miarag.ingestion import ReportDoc
 from miarag.corpus import chunk_documents, split_members, split_members_by_doc, Chunk
 from miarag.rag import TargetRAG
 from miarag.providers import build_llm, build_embedder, build_perplexity
-from miarag.attacks.s2mia import s2mia_scores, s2mia_scores_native_ppl
+from miarag.attacks.s2mia import s2mia_scores_with_feats
 from miarag.attacks.budgetleak import budgetleak_scores
 from miarag.attacks.rag_mia import rag_mia_scores, rag_mia_graybox_scores
 from miarag.defenses import apply_defense
@@ -31,12 +38,21 @@ def build_pipeline(reports_jsonl: Path, rag, split: str = "chunk") -> tuple[list
     rag.index(members)          # SOLO i membri sono indicizzati
     return members, non_members
 
-def _save(path: Path, chunks, scores, labels):
+def _save(path: Path, chunks, scores, labels, feats=None):
+    """Salva gli score. Se feats (lista di {bleu, ppl}) è fornita, aggiunge le
+    colonne bleu,ppl per verificabilità (usato da S2MIA). Altrimenti scrive le
+    4 colonne storiche (retrocompat con run_eval._load, che legge per nome)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as f:
-        w = csv.writer(f); w.writerow(["chunk_id", "score", "label", "has_person"])
-        for c, s, l in zip(chunks, scores, labels):
-            w.writerow([c.chunk_id, s, l, int(c.has_person)])
+        w = csv.writer(f)
+        if feats is not None:
+            w.writerow(["chunk_id", "score", "label", "has_person", "bleu", "ppl"])
+            for c, s, l, ft in zip(chunks, scores, labels, feats):
+                w.writerow([c.chunk_id, s, l, int(c.has_person), ft["bleu"], ft["ppl"]])
+        else:
+            w.writerow(["chunk_id", "score", "label", "has_person"])
+            for c, s, l in zip(chunks, scores, labels):
+                w.writerow([c.chunk_id, s, l, int(c.has_person)])
 
 def main():
     parser = argparse.ArgumentParser()
@@ -100,20 +116,22 @@ def main():
     print(f"[6/6] running attacks (defense={args.defense}, graybox={args.graybox})...", flush=True)
     import time as _time
 
+    # is_s2mia flag: S2MIA usa s2mia_scores_with_feats → (scores, labels, feats, kept),
+    # salva anche bleu/ppl. Gli altri usano scored_loop → (scores, labels).
     if args.graybox:
         # Gray-box: usa logprob del target. Solo S2MIA e RAG-MIA hanno variante
         # gray-box; BudgetLeak è comportamentale (nessun logprob) e identico al
         # black-box → SALTATO qui per non duplicarlo. Suffisso _graybox (+ difesa).
         gb_suffix = "_graybox" + suffix
         attack_plan = [
-            ("s2mia", s2mia_scores_native_ppl, gb_suffix),
-            ("rag_mia", rag_mia_graybox_scores, gb_suffix),
+            ("s2mia", lambda rag, ch: s2mia_scores_with_feats(rag, ch, graybox=True), gb_suffix, True),
+            ("rag_mia", rag_mia_graybox_scores, gb_suffix, False),
         ]
     else:
         attack_plan = [
-            ("s2mia", s2mia_scores, suffix),
-            ("budgetleak", budgetleak_scores, suffix),
-            ("rag_mia", rag_mia_scores, suffix),
+            ("s2mia", s2mia_scores_with_feats, suffix, True),
+            ("budgetleak", budgetleak_scores, suffix, False),
+            ("rag_mia", rag_mia_scores, suffix, False),
         ]
 
     from pathlib import Path as _Path
@@ -127,12 +145,17 @@ def main():
         attack_plan = [t for t in attack_plan if t[0] in wanted]
         print(f"       attacchi selezionati: {[t[0] for t in attack_plan]}", flush=True)
 
-    for name, fn, suf in attack_plan:
+    for name, fn, suf, is_s2mia in attack_plan:
         t0 = _time.time()
         print(f"       ▶ {name}{suf} starting on {len(targets)} chunks...", flush=True)
         try:
-            scores, labels = fn(rag, targets)
-            _save(out_dir / f"scores_{name}{suf}.csv", targets, scores, labels)
+            if is_s2mia:
+                # S²MIA-M: ritorna anche feature grezze e i chunk effettivamente valutati.
+                scores, labels, feats, kept = fn(rag, targets)
+                _save(out_dir / f"scores_{name}{suf}.csv", kept, scores, labels, feats=feats)
+            else:
+                scores, labels = fn(rag, targets)
+                _save(out_dir / f"scores_{name}{suf}.csv", targets, scores, labels)
             dt = _time.time() - t0
             print(f"       ✓ {name}{suf}: saved {len(scores)} scores ({dt:.1f}s, {dt/len(targets):.2f}s/chunk)", flush=True)
         except Exception as e:  # resiliente: un attacco fallito non blocca gli altri

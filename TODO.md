@@ -35,7 +35,14 @@ bloccante.
 - [x] Run 44-doc (33 wiki + 11 società), doc-split, 2 target (Azure/Ollama).
 - [x] 6 grafici ROC/distribuzioni (`results/plots/`).
 - [x] Dashboard Streamlit aggiornata (metriche 44-doc + galleria plot; avvio diretto).
-- [x] Suite offline: **93 test, 1 skip noto**.
+- [x] Suite offline: **96 test, 1 skip noto**.
+- [x] Fix scoring S2MIA: **S²MIA-M (XGBoost su BLEU+PPL grezze)** al posto della
+  somma scalare `BLEU + 1/(1+PPL)` (schiacciava la perplexity → AUC sottostimata).
+  Rialza S2MIA: llama3.1 0.543→0.688, GPT-4o-mini 0.618→0.687, gray-box 0.655→0.713.
+- [x] Fix segfault macOS ARM (torch+xgboost, 2× OpenMP) via `OMP_NUM_THREADS=1`
+  in `run_attack.py` + script regen; sanitizzazione inf/finiti-enormi in `_xgb_proba`.
+- [x] Parallelizzazione estrazione S2MIA: thread-pool env-gated
+  (`MIARAG_S2MIA_WORKERS`) + MPS lock → ~2.7x con Ollama `-np 4` (continuous-batching).
 
 ## Sviluppi futuri (opzionali — per "lavori futuri" in tesi)
 
@@ -51,6 +58,7 @@ bloccante.
 ### Ingegneria
 - [ ] Rate/cost cap hard su `TRACKER` (`max_calls`).
 - [ ] Provider `gemini` (Vertex AI) e `local_hf` (Llama-3.1 in HF format).
-- [ ] Fix segfault macOS ARM full-suite (torch+xgboost+tqdm): `TQDM_DISABLE=1`
-  o `OMP_NUM_THREADS=1` (test `test_backcompat_positional_signature` skippato).
+- [~] Segfault macOS ARM (torch+xgboost, 2× OpenMP): mitigato con `OMP_NUM_THREADS=1`
+  negli script attacco. Resta skippato in full-suite `test_backcompat_positional_signature`
+  (torch+xgboost+tqdm insieme); runnable standalone.
 - [ ] Migrazione Settings a `pydantic.BaseModel`; CI GitHub Actions (matrix).

@@ -20,7 +20,12 @@ class SentenceTransformerEmbedder:
         self.dim = int(_dim_fn() or 0) if _dim_fn else 0
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        return self._st.encode(list(texts)).tolist()
+        # MPS non thread-safe: serializza (no-op se estrazione single-thread).
+        from miarag.providers._mps import MPS_LOCK
+        with MPS_LOCK:
+            return self._st.encode(list(texts)).tolist()
 
     def embed_query(self, text: str) -> list[float]:
-        return self._st.encode([text])[0].tolist()
+        from miarag.providers._mps import MPS_LOCK
+        with MPS_LOCK:
+            return self._st.encode([text])[0].tolist()

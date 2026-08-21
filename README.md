@@ -23,7 +23,7 @@ detect them? Corpus: 44 documents → 1407 chunks, document-level split, targets
 
 | Attack | GPT-4o-mini | llama3.1 | metric |
 |---|---|---|---|
-| S2MIA | 0.618 | 0.543 | AUC |
+| S2MIA | 0.687 | 0.688 | AUC |
 | BudgetLeak | 0.592 | 0.560 | AUC |
 | RAG-MIA (black-box) | 0.796 | 0.769 | AUC |
 | **RAG-MIA (gray-box, logprobs)** | **0.988** (TPR@1%FPR **0.750**) | — | AUC |
@@ -154,8 +154,9 @@ Fully offline suite (no network, NER and Ollama mocked):
 uv run pytest -q
 ```
 
-62 passing, 1 skipped (a backcompat test isolated for a known macOS ARM
-segfault when torch+xgboost+tqdm run together; runnable standalone).
+96 passing, 1 skipped (a backcompat test isolated for a known macOS ARM
+segfault when torch+xgboost+tqdm run together; runnable standalone). Attack
+scripts set `OMP_NUM_THREADS=1` to avoid the dual-OpenMP segfault at scoring time.
 
 ## Real corpus ingestion
 
